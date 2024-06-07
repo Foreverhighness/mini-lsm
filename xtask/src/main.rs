@@ -5,7 +5,7 @@ use clap::Parser;
 use console::style;
 use duct::cmd;
 
-#[derive(clap::Parser, Debug)]
+#[derive(clap::Parser, Debug, Clone, Copy)]
 struct CopyTestAction {
     #[arg(long)]
     week: usize,
@@ -105,17 +105,15 @@ fn serve_book() -> Result<()> {
 fn sync() -> Result<()> {
     cmd!("mkdir", "-p", "sync-tmp").run()?;
     cmd!("cp", "-a", "mini-lsm-starter/", "sync-tmp/mini-lsm-starter").run()?;
+
     let cargo_toml = "sync-tmp/mini-lsm-starter/Cargo.toml";
-    std::fs::write(
-        cargo_toml,
-        std::fs::read_to_string(cargo_toml)?.replace("mini-lsm-starter", "mini-lsm")
-            + "\n[workspace]\n",
-    )?;
+    let mut contents = std::fs::read_to_string(cargo_toml)?.replace("mini-lsm-starter", "mini-lsm");
+    contents.push_str("\n[workspace]\n");
+    std::fs::write(cargo_toml, contents)?;
+
     let wrapper_rs = "sync-tmp/mini-lsm-starter/src/bin/wrapper.rs";
-    std::fs::write(
-        wrapper_rs,
-        std::fs::read_to_string(wrapper_rs)?.replace("mini_lsm_starter", "mini_lsm"),
-    )?;
+    let contents = std::fs::read_to_string(wrapper_rs)?.replace("mini_lsm_starter", "mini_lsm");
+    std::fs::write(wrapper_rs, contents)?;
     cmd!(
         "cargo",
         "semver-checks",
@@ -141,12 +139,12 @@ fn copy_test_case(test: CopyTestAction) -> Result<()> {
         std::fs::create_dir(target_dir)?;
     }
     let test_filename = format!("week{}_day{}.rs", test.week, test.day);
-    let src = format!("{}/{}", src_dir, test_filename);
-    let target = format!("{}/{}", target_dir, test_filename);
+    let src = format!("{src_dir}/{test_filename}");
+    let target = format!("{target_dir}/{test_filename}");
     cmd!("cp", src, target).run()?;
     let test_filename = "harness.rs";
-    let src = format!("{}/{}", src_dir, test_filename);
-    let target = format!("{}/{}", target_dir, test_filename);
+    let src = format!("{src_dir}/{test_filename}");
+    let target = format!("{target_dir}/{test_filename}");
     cmd!("cp", src, target).run()?;
     let mut test_file = Vec::new();
     for file in Path::new(&target_dir).read_dir()? {
@@ -168,9 +166,9 @@ fn copy_test_case(test: CopyTestAction) -> Result<()> {
     )?;
     writeln!(tests_mod)?;
     for tf in test_file {
-        writeln!(tests_mod, "mod {};", tf)?;
+        writeln!(tests_mod, "mod {tf};")?;
     }
-    println!("{}", tests_mod);
+    println!("{tests_mod}");
     std::fs::write("mini-lsm-starter/src/tests.rs", tests_mod)?;
     Ok(())
 }
