@@ -16,6 +16,7 @@ pub struct TieredCompactionOptions {
     pub min_merge_width: usize,
 }
 
+#[derive(Debug)]
 pub struct TieredCompactionController {
     options: TieredCompactionOptions,
 }

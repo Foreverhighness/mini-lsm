@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::compact::CompactionTask;
 
+#[derive(Debug)]
 pub struct Manifest {
     file: Arc<Mutex<File>>,
 }

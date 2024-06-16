@@ -40,6 +40,7 @@ impl CompactionTask {
     }
 }
 
+#[derive(Debug)]
 pub(crate) enum CompactionController {
     Leveled(LeveledCompactionController),
     Tiered(TieredCompactionController),

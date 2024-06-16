@@ -24,7 +24,7 @@ use crate::table::SsTable;
 pub type BlockCache = moka::sync::Cache<(usize, usize), Arc<Block>>;
 
 /// Represents the state of the storage engine.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct LsmStorageState {
     /// The current memtable.
     pub memtable: Arc<MemTable>,
@@ -119,6 +119,7 @@ pub enum CompactionFilter {
 }
 
 /// The storage interface of the LSM tree.
+#[derive(Debug)]
 pub(crate) struct LsmStorageInner {
     pub(crate) state: Arc<RwLock<Arc<LsmStorageState>>>,
     pub(crate) state_lock: Mutex<()>,
@@ -133,6 +134,7 @@ pub(crate) struct LsmStorageInner {
 }
 
 /// A thin wrapper for `LsmStorageInner` and the user interface for MiniLSM.
+#[derive(Debug)]
 pub struct MiniLsm {
     pub(crate) inner: Arc<LsmStorageInner>,
     /// Notifies the L0 flush thread to stop working. (In week 1 day 6)

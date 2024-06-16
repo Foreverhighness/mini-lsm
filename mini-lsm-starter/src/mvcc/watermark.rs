@@ -3,6 +3,7 @@
 
 use std::collections::BTreeMap;
 
+#[derive(Debug)]
 pub struct Watermark {
     readers: BTreeMap<u64, usize>,
 }
