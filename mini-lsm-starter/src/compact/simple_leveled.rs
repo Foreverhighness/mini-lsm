@@ -19,6 +19,7 @@ pub struct SimpleLeveledCompactionTask {
     pub is_lower_level_bottom_level: bool,
 }
 
+#[derive(Debug)]
 pub struct SimpleLeveledCompactionController {
     options: SimpleLeveledCompactionOptions,
 }

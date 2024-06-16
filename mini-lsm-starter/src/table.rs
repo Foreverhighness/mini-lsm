@@ -49,6 +49,7 @@ impl BlockMeta {
 }
 
 /// A file object.
+#[derive(Debug)]
 pub struct FileObject(Option<File>, u64);
 
 impl FileObject {
@@ -84,6 +85,7 @@ impl FileObject {
 }
 
 /// An SSTable.
+#[derive(Debug)]
 pub struct SsTable {
     /// The actual storage unit of SsTable, the format is as above.
     pub(crate) file: FileObject,

@@ -4,6 +4,7 @@ use anyhow::Result;
 use bytes::{BufMut, Bytes, BytesMut};
 
 /// Implements a bloom filter
+#[derive(Debug)]
 pub struct Bloom {
     /// data of filter in bits
     pub(crate) filter: Bytes,
