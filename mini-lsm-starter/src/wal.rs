@@ -10,6 +10,7 @@ use bytes::Bytes;
 use crossbeam_skiplist::SkipMap;
 use parking_lot::Mutex;
 
+#[derive(Debug)]
 pub struct Wal {
     file: Arc<Mutex<BufWriter<File>>>,
 }
