@@ -292,8 +292,23 @@ impl LsmStorageInner {
 
     /// Put a key-value pair into the storage by writing into the current memtable.
     pub fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
-        let state = self.state.read();
-        state.memtable.put(key, value)
+        let guard_arc_state = self.state.read();
+        guard_arc_state.memtable.put(key, value)?;
+        let size = guard_arc_state.memtable.approximate_size();
+
+        drop(guard_arc_state);
+
+        let memtable_reaches_capacity_on_put = size >= self.options.target_sst_size;
+        if memtable_reaches_capacity_on_put {
+            let state_lock = self.state_lock.lock();
+            let current_memtable_reaches_capacity =
+                self.state.read().memtable.approximate_size() >= self.options.target_sst_size;
+            if current_memtable_reaches_capacity {
+                self.force_freeze_memtable(&state_lock)?;
+            }
+        }
+
+        Ok(())
     }
 
     /// Remove a key from the storage by writing an empty value.
@@ -323,7 +338,22 @@ impl LsmStorageInner {
 
     /// Force freeze the current memtable to an immutable memtable
     pub fn force_freeze_memtable(&self, _state_lock_observer: &MutexGuard<'_, ()>) -> Result<()> {
-        unimplemented!()
+        let new_arc_memtable = Arc::new(MemTable::create(self.next_sst_id()));
+
+        let mut guard_arc_state = self.state.write();
+
+        // I'm wondering why not just use Arc<RwLock<LsmStorageState>>> but Arc<RwLock<Arc<LsmStorageState>>>> (week 1 day 1)
+        // So we need to clone all state to just update one field
+        let old_state = guard_arc_state.as_ref();
+        let mut new_state = old_state.clone();
+
+        let old_arc_memtable = std::mem::replace(&mut new_state.memtable, new_arc_memtable);
+        new_state.imm_memtables.insert(0, old_arc_memtable);
+
+        *guard_arc_state = Arc::new(new_state);
+        drop(guard_arc_state);
+
+        Ok(())
     }
 
     /// Force flush the earliest-created immutable memtable to disk
