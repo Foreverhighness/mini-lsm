@@ -282,7 +282,19 @@ impl LsmStorageInner {
     /// Get a key from the storage. In day 7, this can be further optimized by using a bloom filter.
     pub fn get(&self, key: &[u8]) -> Result<Option<Bytes>> {
         let state = self.state.read();
-        Ok(state.memtable.get(key).filter(|v| !v.is_empty()))
+        if let Some(v) = state.memtable.get(key) {
+            return Ok(Some(v).filter(|v| !v.is_empty()));
+        }
+
+        // I'm wondering here why not use Arc<Vec<Arc<MemTable>>> (week 1 day 1)
+        // So that I can use `let imm_memtables = Arc::clone(&state.imm_memtables)` then immediately release the lock
+        for memtable in &state.imm_memtables {
+            if let Some(v) = memtable.get(key) {
+                return Ok(Some(v).filter(|v| !v.is_empty()));
+            }
+        }
+
+        Ok(None)
     }
 
     /// Write a batch of data into the storage. Implement in week 2 day 7.
