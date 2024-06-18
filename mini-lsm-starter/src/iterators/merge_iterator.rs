@@ -30,7 +30,7 @@ impl<I: StorageIterator> PartialOrd for HeapWrapper<I> {
             cmp::Ordering::Less => Some(cmp::Ordering::Less),
             cmp::Ordering::Equal => self.0.partial_cmp(&other.0),
         }
-        .map(|x| x.reverse())
+        .map(cmp::Ordering::reverse)
     }
 }
 
