@@ -129,7 +129,7 @@ impl LsmStorageInner {
         | CompactionOptions::Simple(_)
         | CompactionOptions::Tiered(_) = self.options.compaction_options
         {
-            let this = self.clone();
+            let this = Arc::clone(self);
             let handle = std::thread::spawn(move || {
                 let ticker = crossbeam_channel::tick(Duration::from_millis(50));
                 loop {
@@ -154,7 +154,7 @@ impl LsmStorageInner {
         self: &Arc<Self>,
         rx: crossbeam_channel::Receiver<()>,
     ) -> Result<Option<std::thread::JoinHandle<()>>> {
-        let this = self.clone();
+        let this = Arc::clone(self);
         let handle = std::thread::spawn(move || {
             let ticker = crossbeam_channel::tick(Duration::from_millis(50));
             loop {
