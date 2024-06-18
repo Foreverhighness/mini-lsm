@@ -131,18 +131,16 @@ impl MockStorage {
                 for id in 0..(files.len() - 1) {
                     let this_file = Arc::clone(&self.snapshot.sstables[&files[id]]);
                     let next_file = Arc::clone(&self.snapshot.sstables[&files[id + 1]]);
-                    if this_file.last_key() >= next_file.first_key() {
-                        panic!(
-                            "invalid file arrangement in L{}: id={}, range={:x}..={:x}; id={}, range={:x}..={:x}",
-                            level,
-                            this_file.sst_id(),
-                            this_file.first_key().for_testing_key_ref().get_u64(),
-                            this_file.last_key().for_testing_key_ref().get_u64(),
-                            next_file.sst_id(),
-                            next_file.first_key().for_testing_key_ref().get_u64(),
-                            next_file.last_key().for_testing_key_ref().get_u64()
-                        );
-                    }
+                    assert!(this_file.last_key() < next_file.first_key(),
+                        "invalid file arrangement in L{}: id={}, range={:x}..={:x}; id={}, range={:x}..={:x}",
+                        level,
+                        this_file.sst_id(),
+                        this_file.first_key().for_testing_key_ref().get_u64(),
+                        this_file.last_key().for_testing_key_ref().get_u64(),
+                        next_file.sst_id(),
+                        next_file.first_key().for_testing_key_ref().get_u64(),
+                        next_file.last_key().for_testing_key_ref().get_u64()
+                    );
                 }
             }
         }
@@ -295,9 +293,10 @@ fn main() {
                         storage.dump_original_id(true, false);
                     }
                     num_compactions += 1;
-                    if num_compactions >= max_levels * 2 {
-                        panic!("compaction does not converge?");
-                    }
+                    assert!(
+                        num_compactions < max_levels * 2,
+                        "compaction does not converge?"
+                    );
                 }
                 if num_compactions == 0 {
                     println!("no compaction triggered");
@@ -385,9 +384,10 @@ fn main() {
                         storage.dump_original_id(false, false);
                     }
                     num_compactions += 1;
-                    if num_compactions >= level0_file_num_compaction_trigger * 3 {
-                        panic!("compaction does not converge?");
-                    }
+                    assert!(
+                        num_compactions < level0_file_num_compaction_trigger * 3,
+                        "compaction does not converge?"
+                    );
                 }
                 if num_compactions == 0 {
                     println!("no compaction triggered");
@@ -572,9 +572,10 @@ fn main() {
                         storage.dump_original_id(true, true);
                     }
                     num_compactions += 1;
-                    if num_compactions >= level0_file_num_compaction_trigger * max_levels * 2 {
-                        panic!("compaction does not converge?");
-                    }
+                    assert!(
+                        num_compactions < level0_file_num_compaction_trigger * max_levels * 2,
+                        "compaction does not converge?"
+                    );
                 }
                 if num_compactions == 0 {
                     println!("no compaction triggered");
