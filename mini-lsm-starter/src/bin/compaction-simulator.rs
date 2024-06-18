@@ -129,8 +129,8 @@ impl MockStorage {
         for (level, files) in &self.snapshot.levels {
             if files.len() >= 2 {
                 for id in 0..(files.len() - 1) {
-                    let this_file = self.snapshot.sstables[&files[id]].clone();
-                    let next_file = self.snapshot.sstables[&files[id + 1]].clone();
+                    let this_file = Arc::clone(&self.snapshot.sstables[&files[id]]);
+                    let next_file = Arc::clone(&self.snapshot.sstables[&files[id + 1]]);
                     if this_file.last_key() >= next_file.first_key() {
                         panic!(
                             "invalid file arrangement in L{}: id={}, range={:x}..={:x}; id={}, range={:x}..={:x}",
