@@ -1,6 +1,7 @@
 use crate::lsm_storage::{LsmStorageInner, MiniLsm};
 
 impl LsmStorageInner {
+    #[allow(clippy::pattern_type_mismatch)]
     pub fn dump_structure(&self) {
         let snapshot = self.state.read();
         if !snapshot.l0_sstables.is_empty() {

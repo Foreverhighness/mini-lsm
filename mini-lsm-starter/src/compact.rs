@@ -31,11 +31,11 @@ pub enum CompactionTask {
 
 impl CompactionTask {
     fn compact_to_bottom_level(&self) -> bool {
-        match self {
+        match *self {
             CompactionTask::ForceFullCompaction { .. } => true,
-            CompactionTask::Leveled(task) => task.is_lower_level_bottom_level,
-            CompactionTask::Simple(task) => task.is_lower_level_bottom_level,
-            CompactionTask::Tiered(task) => task.bottom_tier_included,
+            CompactionTask::Leveled(ref task) => task.is_lower_level_bottom_level,
+            CompactionTask::Simple(ref task) => task.is_lower_level_bottom_level,
+            CompactionTask::Tiered(ref task) => task.bottom_tier_included,
         }
     }
 }
@@ -50,20 +50,21 @@ pub(crate) enum CompactionController {
 
 impl CompactionController {
     pub fn generate_compaction_task(&self, snapshot: &LsmStorageState) -> Option<CompactionTask> {
-        match self {
-            CompactionController::Leveled(ctrl) => ctrl
+        match *self {
+            CompactionController::Leveled(ref ctrl) => ctrl
                 .generate_compaction_task(snapshot)
                 .map(CompactionTask::Leveled),
-            CompactionController::Simple(ctrl) => ctrl
+            CompactionController::Simple(ref ctrl) => ctrl
                 .generate_compaction_task(snapshot)
                 .map(CompactionTask::Simple),
-            CompactionController::Tiered(ctrl) => ctrl
+            CompactionController::Tiered(ref ctrl) => ctrl
                 .generate_compaction_task(snapshot)
                 .map(CompactionTask::Tiered),
             CompactionController::NoCompaction => unreachable!(),
         }
     }
 
+    #[allow(clippy::pattern_type_mismatch)]
     pub fn apply_compaction_result(
         &self,
         snapshot: &LsmStorageState,
@@ -89,7 +90,7 @@ impl CompactionController {
 impl CompactionController {
     pub fn flush_to_l0(&self) -> bool {
         matches!(
-            self,
+            *self,
             Self::Leveled(_) | Self::Simple(_) | Self::NoCompaction
         )
     }
