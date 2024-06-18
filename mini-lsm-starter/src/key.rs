@@ -1,3 +1,6 @@
+#![allow(clippy::must_use_candidate)] // TODO(fh): remove clippy allow
+#![allow(clippy::missing_const_for_fn)] // TODO(fh): remove clippy allow
+
 use std::fmt::Debug;
 
 use bytes::Bytes;
