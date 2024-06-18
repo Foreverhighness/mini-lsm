@@ -47,7 +47,7 @@ impl ReplHandler {
             Command::Fill { begin, end } => {
                 for i in *begin..=*end {
                     self.lsm.put(
-                        format!("{}", i).as_bytes(),
+                        format!("{i}").as_bytes(),
                         format!("value{}@{}", i, self.epoch).as_bytes(),
                     )?;
                 }
@@ -60,13 +60,13 @@ impl ReplHandler {
             }
             Command::Del { key } => {
                 self.lsm.delete(key.as_bytes())?;
-                println!("{} deleted", key);
+                println!("{key} deleted");
             }
             Command::Get { key } => {
                 if let Some(value) = self.lsm.get(key.as_bytes())? {
-                    println!("{}={:?}", key, value);
+                    println!("{key}={value:?}");
                 } else {
-                    println!("{} not exist", key);
+                    println!("{key} not exist");
                 }
             }
             Command::Scan { begin, end } => match (begin, end) {
@@ -85,7 +85,7 @@ impl ReplHandler {
                         cnt += 1;
                     }
                     println!();
-                    println!("{} keys scanned", cnt);
+                    println!("{cnt} keys scanned");
                 }
                 (Some(begin), Some(end)) => {
                     let mut iter = self.lsm.scan(
@@ -103,7 +103,7 @@ impl ReplHandler {
                         cnt += 1;
                     }
                     println!();
-                    println!("{} keys scanned", cnt);
+                    println!("{cnt} keys scanned");
                 }
                 _ => {
                     println!("invalid command");

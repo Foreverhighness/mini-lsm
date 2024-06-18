@@ -329,7 +329,7 @@ impl LsmStorageInner {
     }
 
     pub(crate) fn path_of_sst_static(path: impl AsRef<Path>, id: usize) -> PathBuf {
-        path.as_ref().join(format!("{:05}.sst", id))
+        path.as_ref().join(format!("{id:05}.sst"))
     }
 
     pub(crate) fn path_of_sst(&self, id: usize) -> PathBuf {
@@ -337,7 +337,7 @@ impl LsmStorageInner {
     }
 
     pub(crate) fn path_of_wal_static(path: impl AsRef<Path>, id: usize) -> PathBuf {
-        path.as_ref().join(format!("{:05}.wal", id))
+        path.as_ref().join(format!("{id:05}.wal"))
     }
 
     pub(crate) fn path_of_wal(&self, id: usize) -> PathBuf {
