@@ -135,7 +135,7 @@ impl LsmStorageInner {
                 loop {
                     crossbeam_channel::select! {
                         recv(ticker) -> _ => if let Err(e) = this.trigger_compaction() {
-                            eprintln!("compaction failed: {}", e);
+                            eprintln!("compaction failed: {e}");
                         },
                         recv(rx) -> _ => return
                     }
@@ -160,7 +160,7 @@ impl LsmStorageInner {
             loop {
                 crossbeam_channel::select! {
                     recv(ticker) -> _ => if let Err(e) = this.trigger_flush() {
-                        eprintln!("flush failed: {}", e);
+                        eprintln!("flush failed: {e}");
                     },
                     recv(rx) -> _ => return
                 }

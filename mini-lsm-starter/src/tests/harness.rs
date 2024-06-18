@@ -219,8 +219,8 @@ pub fn sync(storage: &LsmStorageInner) {
 
 pub fn compaction_bench(storage: Arc<MiniLsm>) {
     let mut key_map = BTreeMap::<usize, usize>::new();
-    let gen_key = |i| format!("{:010}", i); // 10B
-    let gen_value = |i| format!("{:0110}", i); // 110B
+    let gen_key = |i| format!("{i:010}"); // 10B
+    let gen_value = |i| format!("{i:0110}"); // 110B
     let mut max_key = 0;
     let overlaps = if TS_ENABLED { 10000 } else { 20000 };
     for iter in 0..10 {
