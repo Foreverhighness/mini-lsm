@@ -60,7 +60,7 @@ impl LsmStorageState {
             imm_memtables: Vec::new(),
             l0_sstables: Vec::new(),
             levels,
-            sstables: Default::default(),
+            sstables: HashMap::default(),
         }
     }
 }

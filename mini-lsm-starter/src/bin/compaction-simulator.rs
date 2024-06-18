@@ -84,12 +84,12 @@ impl MockStorage {
             imm_memtables: Vec::new(),
             l0_sstables: Vec::new(),
             levels: Vec::new(),
-            sstables: Default::default(),
+            sstables: HashMap::default(),
         };
         Self {
             snapshot,
             next_sst_id: 1,
-            file_list: Default::default(),
+            file_list: HashMap::default(),
             total_flushes: 0,
             total_writes: 0,
         }
