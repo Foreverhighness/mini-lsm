@@ -185,7 +185,7 @@ impl MiniLsm {
     }
 
     pub fn add_compaction_filter(&self, compaction_filter: CompactionFilter) {
-        self.inner.add_compaction_filter(compaction_filter)
+        self.inner.add_compaction_filter(compaction_filter);
     }
 
     pub fn get(&self, key: &[u8]) -> Result<Option<Bytes>> {
