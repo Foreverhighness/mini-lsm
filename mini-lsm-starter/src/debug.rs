@@ -18,6 +18,6 @@ impl LsmStorageInner {
 
 impl MiniLsm {
     pub fn dump_structure(&self) {
-        self.inner.dump_structure()
+        self.inner.dump_structure();
     }
 }
