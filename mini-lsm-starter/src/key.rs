@@ -40,12 +40,12 @@ impl Key<Vec<u8>> {
 
     /// Clears the key and set ts to 0.
     pub fn clear(&mut self) {
-        self.0.clear()
+        self.0.clear();
     }
 
     /// Append a slice to the end of the key
     pub fn append(&mut self, data: &[u8]) {
-        self.0.extend(data)
+        self.0.extend(data);
     }
 
     /// Set the key from a slice without re-allocating. The signature will change in week 3.
