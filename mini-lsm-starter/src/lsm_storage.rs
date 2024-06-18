@@ -46,10 +46,10 @@ pub enum WriteBatchRecord<T: AsRef<[u8]>> {
 
 impl LsmStorageState {
     fn create(options: &LsmStorageOptions) -> Self {
-        let levels = match &options.compaction_options {
+        let levels = match options.compaction_options {
             CompactionOptions::Leveled(LeveledCompactionOptions { max_levels, .. })
             | CompactionOptions::Simple(SimpleLeveledCompactionOptions { max_levels, .. }) => (1
-                ..=*max_levels)
+                ..=max_levels)
                 .map(|level| (level, Vec::new()))
                 .collect::<Vec<_>>(),
             CompactionOptions::Tiered(_) => Vec::new(),
@@ -241,14 +241,14 @@ impl LsmStorageInner {
         let path = path.as_ref();
         let state = LsmStorageState::create(&options);
 
-        let compaction_controller = match &options.compaction_options {
-            CompactionOptions::Leveled(options) => {
+        let compaction_controller = match options.compaction_options {
+            CompactionOptions::Leveled(ref options) => {
                 CompactionController::Leveled(LeveledCompactionController::new(options.clone()))
             }
-            CompactionOptions::Tiered(options) => {
+            CompactionOptions::Tiered(ref options) => {
                 CompactionController::Tiered(TieredCompactionController::new(options.clone()))
             }
-            CompactionOptions::Simple(options) => CompactionController::Simple(
+            CompactionOptions::Simple(ref options) => CompactionController::Simple(
                 SimpleLeveledCompactionController::new(options.clone()),
             ),
             CompactionOptions::NoCompaction => CompactionController::NoCompaction,
