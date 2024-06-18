@@ -1,4 +1,7 @@
 // Copyright 2021 TiKV Project Authors. Licensed under Apache-2.0.
+#![allow(clippy::cast_precision_loss)] // TODO(fh): remove clippy allow
+#![allow(clippy::cast_possible_truncation)] // TODO(fh): remove clippy allow
+#![allow(clippy::cast_sign_loss)] // TODO(fh): remove clippy allow
 
 use anyhow::Result;
 use bytes::{BufMut, Bytes, BytesMut};

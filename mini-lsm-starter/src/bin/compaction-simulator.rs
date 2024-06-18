@@ -1,3 +1,11 @@
+#![allow(clippy::cast_precision_loss)] // TODO(fh): remove clippy allow
+#![allow(clippy::cognitive_complexity)] // TODO(fh): remove clippy allow
+#![allow(clippy::indexing_slicing)] // TODO(fh): remove clippy allow
+#![allow(clippy::must_use_candidate)] // TODO(fh): remove clippy allow
+#![allow(clippy::needless_pass_by_value)] // TODO(fh): remove clippy allow
+#![allow(clippy::pattern_type_mismatch)] // TODO(fh): remove clippy allow
+#![allow(clippy::too_many_lines)] // TODO(fh): remove clippy allow
+
 mod wrapper;
 use wrapper::mini_lsm_wrapper;
 

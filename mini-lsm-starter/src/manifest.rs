@@ -1,4 +1,5 @@
 #![allow(dead_code)] // REMOVE THIS LINE after fully implementing this functionality
+#![allow(clippy::needless_pass_by_value)] // TODO(fh): remove clippy allow
 
 use std::fs::File;
 use std::path::Path;

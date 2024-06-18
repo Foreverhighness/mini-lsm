@@ -1,3 +1,6 @@
+#![allow(clippy::unnecessary_wraps)] // TODO(fh): remove clippy allow
+#![allow(clippy::pattern_type_mismatch)] // TODO(fh): remove clippy allow
+
 mod wrapper;
 
 use rustyline::DefaultEditor;
@@ -159,12 +162,12 @@ enum Command {
 
 impl Command {
     pub fn parse(input: &str) -> Result<Self> {
-        use nom::bytes::complete::*;
-        use nom::character::complete::*;
+        use nom::bytes::complete::{tag_no_case, take_till1};
+        use nom::character::complete::{digit1, space1};
 
-        use nom::branch::*;
-        use nom::combinator::*;
-        use nom::sequence::*;
+        use nom::branch::alt;
+        use nom::combinator::{map, map_res, opt};
+        use nom::sequence::tuple;
 
         let uint = |i| {
             map_res(digit1::<&str, nom::error::Error<_>>, |s: &str| {
