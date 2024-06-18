@@ -4,6 +4,7 @@ use bytes::Bytes;
 
 pub const TS_ENABLED: bool = false;
 
+#[derive(Clone, Copy)]
 pub struct Key<T: AsRef<[u8]>>(T);
 
 pub type KeySlice<'a> = Key<&'a [u8]>;
@@ -147,14 +148,6 @@ impl<T: AsRef<[u8]> + PartialEq> PartialEq for Key<T> {
 }
 
 impl<T: AsRef<[u8]> + Eq> Eq for Key<T> {}
-
-impl<T: AsRef<[u8]> + Clone> Clone for Key<T> {
-    fn clone(&self) -> Self {
-        Self(self.0.clone())
-    }
-}
-
-impl<T: AsRef<[u8]> + Copy> Copy for Key<T> {}
 
 impl<T: AsRef<[u8]> + PartialOrd> PartialOrd for Key<T> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
