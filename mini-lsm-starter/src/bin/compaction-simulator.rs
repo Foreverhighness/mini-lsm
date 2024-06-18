@@ -439,8 +439,8 @@ fn main() {
             sst_size_mb,
         } => {
             let controller = LeveledCompactionController::new(LeveledCompactionOptions {
-                level0_file_num_compaction_trigger,
                 level_size_multiplier,
+                level0_file_num_compaction_trigger,
                 max_levels,
                 base_level_size_mb,
             });
