@@ -47,7 +47,14 @@ pub struct MergeIterator<I: StorageIterator> {
 
 impl<I: StorageIterator> MergeIterator<I> {
     pub fn create(iters: Vec<Box<I>>) -> Self {
-        unimplemented!()
+        let mut iters: BinaryHeap<_> = iters
+            .into_iter()
+            .filter(|iter| iter.is_valid())
+            .enumerate()
+            .map(|(idx, iter)| HeapWrapper(idx, iter))
+            .collect();
+        let current = iters.pop();
+        Self { iters, current }
     }
 }
 
@@ -57,18 +64,41 @@ impl<I: 'static + for<'a> StorageIterator<KeyType<'a> = KeySlice<'a>>> StorageIt
     type KeyType<'a> = KeySlice<'a>;
 
     fn key(&self) -> KeySlice {
-        unimplemented!()
+        self.current.as_ref().unwrap().1.key()
     }
 
     fn value(&self) -> &[u8] {
-        unimplemented!()
+        self.current.as_ref().unwrap().1.value()
     }
 
     fn is_valid(&self) -> bool {
-        unimplemented!()
+        self.current.is_some()
     }
 
     fn next(&mut self) -> Result<()> {
-        unimplemented!()
+        let mut old_heap = self.current.take().unwrap();
+        debug_assert!(!self.is_valid());
+
+        let key = old_heap.1.key();
+        while let Some(mut heap) = self.iters.pop() {
+            if key != heap.1.key() {
+                debug_assert!(heap.1.is_valid());
+                self.iters.push(heap);
+                break;
+            }
+
+            heap.1.next()?;
+            if heap.1.is_valid() {
+                self.iters.push(heap);
+            }
+        }
+
+        old_heap.1.next()?;
+        if old_heap.1.is_valid() {
+            self.iters.push(old_heap);
+        }
+
+        self.current = self.iters.pop();
+        Ok(())
     }
 }
