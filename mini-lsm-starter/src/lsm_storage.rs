@@ -1,9 +1,6 @@
 #![allow(dead_code)] // REMOVE THIS LINE after fully implementing this functionality
-#![allow(clippy::missing_const_for_fn)] // TODO(fh): remove clippy allow
 #![allow(clippy::unused_self)] // TODO(fh): remove clippy allow
 #![allow(clippy::unnecessary_wraps)] // TODO(fh): remove clippy allow
-#![allow(clippy::doc_markdown)] // TODO(fh): remove clippy allow
-#![allow(clippy::must_use_candidate)] // TODO(fh): remove clippy allow
 
 use std::collections::HashMap;
 use std::ops::Bound;
