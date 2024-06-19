@@ -125,7 +125,6 @@ pub enum CompactionFilter {
 }
 
 /// The storage interface of the LSM tree.
-#[derive(Debug)]
 pub(crate) struct LsmStorageInner {
     pub(crate) state: Arc<RwLock<Arc<LsmStorageState>>>,
     pub(crate) state_lock: Mutex<()>,
@@ -137,6 +136,14 @@ pub(crate) struct LsmStorageInner {
     pub(crate) manifest: Option<Manifest>,
     pub(crate) mvcc: Option<LsmMvccInner>,
     pub(crate) compaction_filters: Arc<Mutex<Vec<CompactionFilter>>>,
+}
+
+impl std::fmt::Debug for LsmStorageInner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LsmStorageInner")
+            .field("state", &self.state)
+            .finish()
+    }
 }
 
 /// A thin wrapper for `LsmStorageInner` and the user interface for MiniLSM.
