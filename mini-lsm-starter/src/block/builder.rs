@@ -1,7 +1,12 @@
 #![allow(unused_variables)] // TODO(you): remove this lint after implementing this mod
 #![allow(dead_code)] // TODO(you): remove this lint after implementing this mod
 
-use crate::key::{KeySlice, KeyVec};
+use bytes::BufMut;
+
+use crate::{
+    block::{SIZE_KEY_LEN, SIZE_NUM_OF_ELEMENT, SIZE_OF_OFFSET_ELEMENT, SIZE_VALUE_LEN},
+    key::{KeySlice, KeyVec},
+};
 
 use super::Block;
 
@@ -15,27 +20,70 @@ pub struct BlockBuilder {
     block_size: usize,
     /// The first key in the block
     first_key: KeyVec,
+    /// Current offset
+    offset: usize,
+    /// Current size
+    size: usize,
 }
 
 impl BlockBuilder {
     /// Creates a new block builder.
     pub fn new(block_size: usize) -> Self {
-        unimplemented!()
+        BlockBuilder {
+            offsets: Vec::new(),
+            data: Vec::new(),
+            block_size,
+            first_key: KeyVec::default(),
+            offset: 0,
+            size: 0,
+        }
     }
 
     /// Adds a key-value pair to the block. Returns false when the block is full.
     #[must_use]
     pub fn add(&mut self, key: KeySlice, value: &[u8]) -> bool {
-        unimplemented!()
+        debug_assert!(!key.is_empty());
+
+        let key_len: u16 = key.len().try_into().unwrap();
+        let value_len: u16 = value.len().try_into().unwrap();
+        let offset: u16 = self.offset.try_into().unwrap();
+
+        let data_size = SIZE_KEY_LEN + key.len() + SIZE_VALUE_LEN + value.len();
+
+        let exceeds_block_size =
+            self.size + data_size + SIZE_OF_OFFSET_ELEMENT + SIZE_NUM_OF_ELEMENT > self.block_size;
+        if exceeds_block_size && !self.is_empty() {
+            return false;
+        }
+        if self.is_empty() {
+            self.first_key = key.to_key_vec();
+        }
+
+        self.data.put_u16(key_len);
+        self.data.put_slice(key.raw_ref());
+        self.data.put_u16(value_len);
+        self.data.put_slice(value);
+
+        self.offsets.push(offset);
+        self.offset += data_size;
+
+        self.size += data_size + SIZE_OF_OFFSET_ELEMENT;
+
+        true
     }
 
     /// Check if there is no key-value pair in the block.
     pub fn is_empty(&self) -> bool {
-        unimplemented!()
+        self.first_key.is_empty()
     }
 
     /// Finalize the block.
     pub fn build(self) -> Block {
-        unimplemented!()
+        debug_assert!(!self.is_empty());
+
+        Block {
+            data: self.data,
+            offsets: self.offsets,
+        }
     }
 }
