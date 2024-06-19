@@ -59,30 +59,27 @@ impl StorageIterator for MockIterator {
 
     fn key(&self) -> KeySlice {
         if let Some(error_when) = self.error_when {
-            assert!(
-                self.index < error_when,
-                "invalid access after next returns an error!"
-            );
+            if self.index >= error_when {
+                panic!("invalid access after next returns an error!");
+            }
         }
         KeySlice::for_testing_from_slice_no_ts(self.data[self.index].0.as_ref())
     }
 
     fn value(&self) -> &[u8] {
         if let Some(error_when) = self.error_when {
-            assert!(
-                self.index < error_when,
-                "invalid access after next returns an error!"
-            );
+            if self.index >= error_when {
+                panic!("invalid access after next returns an error!");
+            }
         }
         self.data[self.index].1.as_ref()
     }
 
     fn is_valid(&self) -> bool {
         if let Some(error_when) = self.error_when {
-            assert!(
-                self.index < error_when,
-                "invalid access after next returns an error!"
-            );
+            if self.index >= error_when {
+                panic!("invalid access after next returns an error!");
+            }
         }
         self.index < self.data.len()
     }
@@ -222,8 +219,8 @@ pub fn sync(storage: &LsmStorageInner) {
 
 pub fn compaction_bench(storage: Arc<MiniLsm>) {
     let mut key_map = BTreeMap::<usize, usize>::new();
-    let gen_key = |i| format!("{i:010}"); // 10B
-    let gen_value = |i| format!("{i:0110}"); // 110B
+    let gen_key = |i| format!("{:010}", i); // 10B
+    let gen_value = |i| format!("{:0110}", i); // 110B
     let mut max_key = 0;
     let overlaps = if TS_ENABLED { 10000 } else { 20000 };
     for iter in 0..10 {
