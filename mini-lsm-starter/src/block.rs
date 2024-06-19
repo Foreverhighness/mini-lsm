@@ -1,7 +1,3 @@
-#![allow(unused_variables)] // TODO(you): remove this lint after implementing this mod
-#![allow(dead_code)] // TODO(you): remove this lint after implementing this mod
-#![allow(clippy::must_use_candidate)] // TODO(fh): remove clippy allow
-
 mod builder;
 mod iterator;
 
