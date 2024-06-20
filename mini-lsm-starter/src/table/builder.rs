@@ -6,7 +6,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::Result;
-use bytes::{BufMut, Bytes};
+use bytes::{Buf, BufMut, Bytes};
 
 use super::{BlockMeta, FileObject, SsTable};
 use crate::{
@@ -105,6 +105,12 @@ impl SsTableBuilder {
         self.flush_block();
 
         let block_meta_offset = self.data.len();
+        let first_key = {
+            let mut first_key_entry = &self.data[..];
+            let first_key_len = first_key_entry.get_u16().into();
+            let first_key = first_key_entry.copy_to_bytes(first_key_len);
+            KeyBytes::from_bytes(first_key)
+        };
 
         let file = {
             BlockMeta::encode_block_meta(&self.meta, &mut self.data);
@@ -114,7 +120,6 @@ impl SsTableBuilder {
         };
 
         let block_meta = self.meta;
-        let first_key = KeyBytes::from_bytes(Bytes::copy_from_slice(&self.first_key));
         let last_key = KeyBytes::from_bytes(Bytes::copy_from_slice(&self.last_key));
 
         Ok(SsTable {
