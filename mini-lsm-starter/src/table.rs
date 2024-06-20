@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 pub use builder::SsTableBuilder;
-use bytes::Buf;
+use bytes::{Buf, BufMut};
 pub use iterator::SsTableIterator;
 
 use crate::block::Block;
@@ -39,17 +39,39 @@ impl BlockMeta {
     /// Encode block meta to a buffer.
     /// You may add extra fields to the buffer,
     /// in order to help keep track of `first_key` when decoding from the same buffer in the future.
-    pub fn encode_block_meta(
-        block_meta: &[BlockMeta],
-        #[allow(clippy::ptr_arg)] // remove this allow after you finish
-        buf: &mut Vec<u8>,
-    ) {
-        unimplemented!()
+    pub fn encode_block_meta(block_meta: &[BlockMeta], buf: &mut Vec<u8>) {
+        buf.put_u16(block_meta.len().try_into().unwrap());
+        for &BlockMeta {
+            offset,
+            ref first_key,
+            ref last_key,
+        } in block_meta
+        {
+            buf.put_u32(offset.try_into().unwrap());
+            buf.put_u16(first_key.len().try_into().unwrap());
+            buf.put_slice(first_key.raw_ref());
+            buf.put_u16(last_key.len().try_into().unwrap());
+            buf.put_slice(last_key.raw_ref());
+        }
     }
 
     /// Decode block meta from a buffer.
-    pub fn decode_block_meta(buf: impl Buf) -> Vec<BlockMeta> {
-        unimplemented!()
+    pub fn decode_block_meta(mut buf: impl Buf) -> Vec<BlockMeta> {
+        let len = buf.get_u16().into();
+        let mut vec_block_meta = Vec::with_capacity(len);
+        for _ in 0..len {
+            let offset = buf.get_u32().try_into().unwrap();
+            let first_key_len = buf.get_u16().into();
+            let first_key = KeyBytes::from_bytes(buf.copy_to_bytes(first_key_len));
+            let last_key_len = buf.get_u16().into();
+            let last_key = KeyBytes::from_bytes(buf.copy_to_bytes(last_key_len));
+            vec_block_meta.push(BlockMeta {
+                offset,
+                first_key,
+                last_key,
+            });
+        }
+        vec_block_meta
     }
 }
 
