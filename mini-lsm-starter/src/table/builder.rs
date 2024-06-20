@@ -47,11 +47,13 @@ impl SsTableBuilder {
             key.raw_ref().clone_into(&mut self.first_key);
         }
 
-        let block_is_full = self.builder.add(key, value);
-        if !block_is_full {
+        let not_full = self.builder.add(key, value);
+        if not_full {
+            eprintln!("not full on {:?} {:?}", self.first_key, key);
             key.raw_ref().clone_into(&mut self.last_key);
             return;
         }
+        eprintln!("full on {:?} {:?}", self.first_key, key);
 
         // block is full
         self.flush_block();
