@@ -1,10 +1,5 @@
 #![allow(unused_variables)] // TODO(you): remove this lint after implementing this mod
 #![allow(dead_code)] // TODO(you): remove this lint after implementing this mod
-#![allow(clippy::needless_pass_by_value)] // TODO(fh): remove clippy allow
-#![allow(clippy::cast_possible_truncation)] // TODO(fh): remove clippy allow
-#![allow(clippy::missing_const_for_fn)] // TODO(fh): remove clippy allow
-#![allow(clippy::doc_markdown)] // TODO(fh): remove clippy allow
-#![allow(clippy::must_use_candidate)] // TODO(fh): remove clippy allow
 
 pub(crate) mod bloom;
 mod builder;
@@ -84,7 +79,7 @@ pub struct FileObject(Option<File>, u64);
 impl FileObject {
     pub fn read(&self, offset: u64, len: u64) -> Result<Vec<u8>> {
         use std::os::unix::fs::FileExt;
-        let mut data = vec![0; len as usize];
+        let mut data = vec![0; len.try_into().unwrap()];
         self.0
             .as_ref()
             .unwrap()
@@ -97,8 +92,8 @@ impl FileObject {
     }
 
     /// Create a new file object (day 2) and write the file to the disk (day 4).
-    pub fn create(path: &Path, data: Vec<u8>) -> Result<Self> {
-        std::fs::write(path, &data)?;
+    pub fn create(path: &Path, data: &[u8]) -> Result<Self> {
+        std::fs::write(path, data)?;
         File::open(path)?.sync_all()?;
         Ok(FileObject(
             Some(File::options().read(true).write(false).open(path)?),
