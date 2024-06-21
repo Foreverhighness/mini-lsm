@@ -108,7 +108,7 @@ impl SsTableBuilder {
             BlockMeta::encode_block_meta(&self.meta, &mut self.data);
             self.data.put_u32(block_meta_offset.try_into().unwrap());
 
-            FileObject::create(path.as_ref(), self.data).unwrap()
+            FileObject::create(path.as_ref(), &self.data).unwrap()
         };
 
         let block_meta = self.meta;
