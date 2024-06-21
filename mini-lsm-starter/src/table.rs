@@ -190,7 +190,29 @@ impl SsTable {
 
     /// Read a block from the disk.
     pub fn read_block(&self, block_idx: usize) -> Result<Arc<Block>> {
-        unimplemented!()
+        let data = {
+            let meta = &self.block_meta[block_idx];
+            let offset = meta.offset;
+
+            let next_offset = self
+                .block_meta
+                .get(block_idx + 1)
+                .map(|meta| meta.offset)
+                .unwrap_or(self.block_meta_offset);
+            let len = next_offset - offset;
+
+            let data = {
+                let offset = offset.try_into().unwrap();
+                let len = len.try_into().unwrap();
+                self.file.read(offset, len)?
+            };
+
+            debug_assert!(data.len() == len);
+            data
+        };
+        let block = Block::decode(&data[..]);
+
+        Ok(Arc::new(block))
     }
 
     /// Read a block from disk, with block cache. (Day 4)
