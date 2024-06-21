@@ -59,7 +59,7 @@ impl SsTableIterator {
             let check = move |idx| {
                 let meta: &BlockMeta = &meta[idx];
                 let first_key = meta.first_key.as_key_slice();
-                key >= first_key
+                key > first_key
             };
 
             let mut left = 0;
@@ -75,15 +75,6 @@ impl SsTableIterator {
             }
             left
         };
-
-        debug_assert!({
-            let chk1 = meta[idx].first_key.as_key_slice() <= key;
-            let chk2 = meta
-                .get(idx + 1)
-                .map(|meta| key < meta.first_key.as_key_slice())
-                .unwrap_or(true);
-            chk1 && chk2
-        });
 
         self.blk_idx = idx;
         let block = self.table.read_block(idx)?;
@@ -110,11 +101,13 @@ impl StorageIterator for SsTableIterator {
 
     /// Return the `key` that's held by the underlying block iterator.
     fn key(&self) -> KeySlice {
+        debug_assert!(self.blk_iter.is_valid());
         self.blk_iter.key()
     }
 
     /// Return the `value` that's held by the underlying block iterator.
     fn value(&self) -> &[u8] {
+        debug_assert!(self.blk_iter.is_valid());
         self.blk_iter.value()
     }
 
@@ -127,10 +120,10 @@ impl StorageIterator for SsTableIterator {
     /// Note: You may want to check if the current block iterator is valid after the move.
     fn next(&mut self) -> Result<()> {
         debug_assert!(self.is_valid());
+        debug_assert!(self.blk_iter.is_valid());
 
-        if self.blk_iter.is_valid() {
-            self.blk_iter.next();
-        } else {
+        self.blk_iter.next();
+        if !self.blk_iter.is_valid() {
             self.next_block()?;
         }
 
