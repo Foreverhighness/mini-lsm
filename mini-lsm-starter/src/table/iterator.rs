@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 
-use super::{BlockMeta, SsTable};
+use super::SsTable;
 use crate::{block::BlockIterator, iterators::StorageIterator, key::KeySlice};
 
 /// An iterator over the contents of an SSTable.
@@ -53,31 +53,8 @@ impl SsTableIterator {
     /// Note: You probably want to review the handout for detailed explanation when implementing
     /// this function.
     pub fn seek_to_key(&mut self, key: KeySlice) -> Result<()> {
-        let len = self.table.num_of_blocks();
-        let meta = &self.table.block_meta;
-        let idx = {
-            let check = move |idx| {
-                let meta: &BlockMeta = &meta[idx];
-                let first_key = meta.first_key.as_key_slice();
-                key > first_key
-            };
-
-            let mut left = 0;
-            let mut right = len;
-            while right > left + 1 {
-                let mid = (left + right) / 2;
-
-                if check(mid) {
-                    left = mid;
-                } else {
-                    right = mid;
-                }
-            }
-            left
-        };
-
-        self.blk_idx = idx;
-        let block = self.table.read_block(idx)?;
+        self.blk_idx = self.table.find_block_idx(key);
+        let block = self.table.read_block(self.blk_idx)?;
         self.blk_iter = BlockIterator::create_and_seek_to_key(block, key);
         if !self.blk_iter.is_valid() {
             self.next_block()?;
