@@ -18,11 +18,14 @@ use crate::compact::{
     SimpleLeveledCompactionController, SimpleLeveledCompactionOptions, TieredCompactionController,
 };
 use crate::iterators::merge_iterator::MergeIterator;
+use crate::iterators::two_merge_iterator::TwoMergeIterator;
+use crate::iterators::StorageIterator;
+use crate::key::KeySlice;
 use crate::lsm_iterator::{FusedIterator, LsmIterator};
 use crate::manifest::Manifest;
 use crate::mem_table::MemTable;
 use crate::mvcc::LsmMvccInner;
-use crate::table::SsTable;
+use crate::table::{SsTable, SsTableIterator};
 
 pub type BlockCache = moka::sync::Cache<(usize, usize), Arc<Block>>;
 
@@ -398,13 +401,58 @@ impl LsmStorageInner {
             let snapshot = self.state.read();
             Arc::clone(&snapshot)
         };
-        let iters = std::iter::once(&snapshot.memtable)
+        let memtable_iters = std::iter::once(&snapshot.memtable)
             .chain(snapshot.imm_memtables.iter())
             .map(|memtable| Box::new(memtable.scan(lower, upper)))
             .collect();
 
-        Ok(FusedIterator::new(LsmIterator::new(
-            MergeIterator::create(iters),
-        )?))
+        let check = move |sst: &Arc<SsTable>| {
+            let first_key = sst.first_key().raw_ref();
+            let last_key = sst.last_key().raw_ref();
+            match lower {
+                Bound::Included(left) if last_key < left => return false,
+                Bound::Excluded(left) if last_key <= left => return false,
+                _ => (),
+            }
+            match upper {
+                Bound::Included(right) if right < first_key => return false,
+                Bound::Excluded(right) if right <= first_key => return false,
+                _ => (),
+            }
+            true
+        };
+
+        let sst_iters = snapshot
+            .l0_sstables
+            .iter()
+            .filter_map(|sst_id| {
+                let sst = &snapshot.sstables[sst_id];
+                if !check(sst) {
+                    None
+                } else {
+                    let table = Arc::clone(sst);
+                    let iter = match lower.map(KeySlice::from_slice) {
+                        Bound::Included(key) => SsTableIterator::create_and_seek_to_key(table, key),
+                        Bound::Excluded(key) => SsTableIterator::create_and_seek_to_key(table, key)
+                            .and_then(|mut iter| {
+                                if iter.is_valid() && iter.key() == key {
+                                    iter.next()?;
+                                }
+                                Ok(iter)
+                            }),
+                        Bound::Unbounded => SsTableIterator::create_and_seek_to_first(table),
+                    };
+                    Some(iter.map(Box::new))
+                }
+            })
+            .collect::<Result<_>>()?;
+
+        let memtable_iters = MergeIterator::create(memtable_iters);
+        let sst_iters = MergeIterator::create(sst_iters);
+
+        let two_merge_iter = TwoMergeIterator::create(memtable_iters, sst_iters)?;
+
+        let lsm_iter = LsmIterator::new(two_merge_iter, upper)?;
+        Ok(FusedIterator::new(lsm_iter))
     }
 }
