@@ -456,9 +456,7 @@ impl LsmStorageInner {
             .iter()
             .filter_map(|sst_id| {
                 let sst = &snapshot.sstables[sst_id];
-                if !check(sst) {
-                    None
-                } else {
+                check(sst).then(move || {
                     let table = Arc::clone(sst);
                     let iter = match lower.map(KeySlice::from_slice) {
                         Bound::Included(key) => SsTableIterator::create_and_seek_to_key(table, key),
@@ -471,8 +469,8 @@ impl LsmStorageInner {
                             }),
                         Bound::Unbounded => SsTableIterator::create_and_seek_to_first(table),
                     };
-                    Some(iter.map(Box::new))
-                }
+                    iter.map(Box::new)
+                })
             })
             .collect::<Result<_>>()?;
 

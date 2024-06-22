@@ -35,9 +35,9 @@ impl StorageIterator for LsmIterator {
 
     fn is_valid(&self) -> bool {
         self.inner.is_valid()
-            && match &self.upper {
-                Bound::Included(right) if right < self.key() => false,
-                Bound::Excluded(right) if right <= self.key() => false,
+            && match self.upper {
+                Bound::Included(ref right) if right < self.key() => false,
+                Bound::Excluded(ref right) if right <= self.key() => false,
                 _ => true,
             }
     }
