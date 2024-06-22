@@ -1,7 +1,3 @@
-#![allow(unused_variables)] // TODO(you): remove this lint after implementing this mod
-#![allow(dead_code)] // TODO(you): remove this lint after implementing this mod
-#![allow(clippy::needless_pass_by_value)] // TODO(fh): remove clippy allow
-
 use anyhow::Result;
 
 use super::StorageIterator;
@@ -30,32 +26,17 @@ impl<
     }
 
     fn update_using(&mut self) -> Result<()> {
-        if self.using_a {
-            if !self.a.is_valid() {
-                self.using_a = !self.using_a;
-            } else if self.b.is_valid() {
-                debug_assert!(self.using_a);
-                let ord = self.a.key().cmp(&self.b.key());
-                self.using_a = match ord {
-                    std::cmp::Ordering::Less => true,
-                    std::cmp::Ordering::Equal => {
-                        self.b.next()?;
-                        true
-                    }
-                    std::cmp::Ordering::Greater => false,
-                };
-            }
+        if !self.a.is_valid() {
+            self.using_a = false;
         } else if !self.b.is_valid() {
-            self.using_a = !self.using_a;
-        } else if self.a.is_valid() {
-            debug_assert!(!self.using_a);
-            let ord = self.a.key().cmp(&self.b.key());
-            self.using_a = match ord {
+            self.using_a = true;
+        } else {
+            debug_assert!(self.a.is_valid() && self.b.is_valid());
+
+            let order = self.a.key().cmp(&self.b.key());
+            self.using_a = match order {
                 std::cmp::Ordering::Less => true,
-                std::cmp::Ordering::Equal => {
-                    self.b.next()?;
-                    true
-                }
+                std::cmp::Ordering::Equal => self.b.next().map(|()| true)?,
                 std::cmp::Ordering::Greater => false,
             };
         }
