@@ -11,7 +11,7 @@ use super::StorageIterator;
 pub struct TwoMergeIterator<A: StorageIterator, B: StorageIterator> {
     a: A,
     b: B,
-    // Add fields as need
+    using_a: bool,
 }
 
 impl<
@@ -20,7 +20,46 @@ impl<
     > TwoMergeIterator<A, B>
 {
     pub fn create(a: A, b: B) -> Result<Self> {
-        unimplemented!()
+        let mut iter = Self {
+            a,
+            b,
+            using_a: false,
+        };
+        iter.update_using()?;
+        Ok(iter)
+    }
+
+    fn update_using(&mut self) -> Result<()> {
+        if self.using_a {
+            if !self.a.is_valid() {
+                self.using_a = !self.using_a;
+            } else if self.b.is_valid() {
+                debug_assert!(self.using_a);
+                let ord = self.a.key().cmp(&self.b.key());
+                self.using_a = match ord {
+                    std::cmp::Ordering::Less => true,
+                    std::cmp::Ordering::Equal => {
+                        self.b.next()?;
+                        true
+                    }
+                    std::cmp::Ordering::Greater => false,
+                };
+            }
+        } else if !self.b.is_valid() {
+            self.using_a = !self.using_a;
+        } else if self.a.is_valid() {
+            debug_assert!(!self.using_a);
+            let ord = self.a.key().cmp(&self.b.key());
+            self.using_a = match ord {
+                std::cmp::Ordering::Less => true,
+                std::cmp::Ordering::Equal => {
+                    self.b.next()?;
+                    true
+                }
+                std::cmp::Ordering::Greater => false,
+            };
+        }
+        Ok(())
     }
 }
 
@@ -32,18 +71,39 @@ impl<
     type KeyType<'a> = A::KeyType<'a>;
 
     fn key(&self) -> Self::KeyType<'_> {
-        unimplemented!()
+        if self.using_a {
+            self.a.key()
+        } else {
+            self.b.key()
+        }
     }
 
     fn value(&self) -> &[u8] {
-        unimplemented!()
+        if self.using_a {
+            self.a.value()
+        } else {
+            self.b.value()
+        }
     }
 
     fn is_valid(&self) -> bool {
-        unimplemented!()
+        if self.using_a {
+            self.a.is_valid()
+        } else {
+            self.b.is_valid()
+        }
     }
 
     fn next(&mut self) -> Result<()> {
-        unimplemented!()
+        debug_assert!(self.is_valid());
+
+        if self.using_a {
+            self.a.next()?;
+        } else {
+            self.b.next()?;
+        }
+        self.update_using()?;
+
+        Ok(())
     }
 }
