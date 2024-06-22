@@ -294,17 +294,46 @@ impl LsmStorageInner {
 
     /// Get a key from the storage. In day 7, this can be further optimized by using a bloom filter.
     pub fn get(&self, key: &[u8]) -> Result<Option<Bytes>> {
-        let state = self.state.read();
-        if let Some(v) = state.memtable.get(key) {
+        let snapshot = {
+            let guard = self.state.read();
+            Arc::clone(&guard)
+        };
+        if let Some(v) = snapshot.memtable.get(key) {
             return Ok(Some(v).filter(|v| !v.is_empty()));
         }
 
         // I'm wondering here why not use Arc<Vec<Arc<MemTable>>> (week 1 day 1)
         // So that I can use `let imm_memtables = Arc::clone(&state.imm_memtables)` then immediately release the lock
-        for memtable in &state.imm_memtables {
+        // Answered at week 1 day 6: because we are using Arc<LsmStorageState>, there are already an Arc wrapper.
+        for memtable in &snapshot.imm_memtables {
             if let Some(v) = memtable.get(key) {
                 return Ok(Some(v).filter(|v| !v.is_empty()));
             }
+        }
+
+        let check = move |sst: &Arc<SsTable>| {
+            let first_key = sst.first_key().raw_ref();
+            let last_key = sst.last_key().raw_ref();
+            first_key <= key && key <= last_key
+        };
+
+        let key = KeySlice::from_slice(key);
+        let sst_iters = snapshot
+            .l0_sstables
+            .iter()
+            .filter_map(|sst_id| {
+                let sst = &snapshot.sstables[sst_id];
+                check(sst).then(|| {
+                    let table = Arc::clone(sst);
+                    let iter = SsTableIterator::create_and_seek_to_key(table, key);
+                    iter.map(Box::new)
+                })
+            })
+            .collect::<Result<_>>()?;
+
+        let sst_iters = MergeIterator::create(sst_iters);
+        if sst_iters.key() == key {
+            return Ok(Some(Bytes::copy_from_slice(sst_iters.value())).filter(|v| !v.is_empty()));
         }
 
         Ok(None)
