@@ -25,7 +25,7 @@ use crate::lsm_iterator::{FusedIterator, LsmIterator};
 use crate::manifest::Manifest;
 use crate::mem_table::MemTable;
 use crate::mvcc::LsmMvccInner;
-use crate::table::{SsTable, SsTableIterator};
+use crate::table::{SsTable, SsTableBuilder, SsTableIterator};
 
 pub type BlockCache = moka::sync::Cache<(usize, usize), Arc<Block>>;
 
@@ -412,7 +412,43 @@ impl LsmStorageInner {
 
     /// Force flush the earliest-created immutable memtable to disk
     pub fn force_flush_next_imm_memtable(&self) -> Result<()> {
-        unimplemented!()
+        let snapshot = {
+            let guard = self.state.read();
+            Arc::clone(&guard)
+        };
+
+        if let Some(memtable) = snapshot.imm_memtables.last() {
+            let _guard = self.state_lock.lock();
+
+            let memtable_not_changed =
+                self.state.read().imm_memtables.last().map(|t| t.id()) == Some(memtable.id());
+            if memtable_not_changed {
+                let mut builder = SsTableBuilder::new(self.options.block_size);
+                memtable.flush(&mut builder)?;
+                let id = self.next_sst_id();
+                let block_cache = Arc::clone(&self.block_cache);
+                let sst = builder.build(id, Some(block_cache), self.path_of_sst(id))?;
+
+                let mut guard_arc_state = self.state.write();
+
+                let old_state = guard_arc_state.as_ref();
+                let mut new_state = old_state.clone();
+
+                let last_memtable = new_state.imm_memtables.pop().unwrap();
+                debug_assert_eq!(last_memtable.id(), memtable.id());
+
+                new_state.l0_sstables.insert(0, id);
+                let is_new_id = new_state.sstables.insert(id, Arc::new(sst)).is_none();
+                debug_assert!(is_new_id);
+
+                *guard_arc_state = Arc::new(new_state);
+                drop(guard_arc_state);
+            }
+        } else {
+            return Err(anyhow::anyhow!("there is no immutable memtable"));
+        }
+
+        Ok(())
     }
 
     pub fn new_txn(&self) -> Result<()> {
