@@ -1,6 +1,4 @@
 #![allow(dead_code)] // REMOVE THIS LINE after fully implementing this functionality
-#![allow(clippy::doc_markdown)] // TODO(fh): remove clippy allow
-#![allow(clippy::missing_const_for_fn)] // TODO(fh): remove clippy allow
 #![allow(clippy::unused_self)] // TODO(fh): remove clippy allow
 #![allow(clippy::unnecessary_wraps)] // TODO(fh): remove clippy allow
 
