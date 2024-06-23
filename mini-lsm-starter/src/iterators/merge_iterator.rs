@@ -11,7 +11,7 @@ struct HeapWrapper<I: StorageIterator>(pub usize, pub Box<I>);
 
 impl<I: StorageIterator> PartialEq for HeapWrapper<I> {
     fn eq(&self, other: &Self) -> bool {
-        self.1.key().eq(&other.1.key()) && self.0.eq(&other.0)
+        self.cmp(other) == cmp::Ordering::Equal
     }
 }
 
@@ -28,7 +28,7 @@ impl<I: StorageIterator> Ord for HeapWrapper<I> {
         self.1
             .key()
             .cmp(&other.1.key())
-            .then_with(|| self.0.cmp(&other.0))
+            .then(self.0.cmp(&other.0))
             .reverse()
     }
 }
