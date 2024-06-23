@@ -314,7 +314,7 @@ impl LsmStorageInner {
             }
         }
 
-        let check = move |sst: &Arc<SsTable>| {
+        let key_within_sst = move |sst: &Arc<SsTable>| {
             let first_key = sst.first_key().raw_ref();
             let last_key = sst.last_key().raw_ref();
             first_key <= key && key <= last_key
@@ -326,7 +326,7 @@ impl LsmStorageInner {
             .iter()
             .filter_map(|sst_id| {
                 let sst = &snapshot.sstables[sst_id];
-                check(sst).then(|| {
+                key_within_sst(sst).then(|| {
                     let table = Arc::clone(sst);
                     let iter = SsTableIterator::create_and_seek_to_key(table, key);
                     iter.map(Box::new)
@@ -474,7 +474,7 @@ impl LsmStorageInner {
             .map(|memtable| Box::new(memtable.scan(lower, upper)))
             .collect();
 
-        let check = move |sst: &Arc<SsTable>| {
+        let range_overlap_with_sst = move |sst: &Arc<SsTable>| {
             let first_key = sst.first_key().raw_ref();
             let last_key = sst.last_key().raw_ref();
             match lower {
@@ -495,7 +495,7 @@ impl LsmStorageInner {
             .iter()
             .filter_map(|sst_id| {
                 let sst = &snapshot.sstables[sst_id];
-                check(sst).then(move || {
+                range_overlap_with_sst(sst).then(move || {
                     let table = Arc::clone(sst);
                     let iter = match lower.map(KeySlice::from_slice) {
                         Bound::Included(key) => SsTableIterator::create_and_seek_to_key(table, key),
