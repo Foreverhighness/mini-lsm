@@ -105,13 +105,18 @@ impl BlockIterator {
     /// Get key value from offset
     fn get_key_value_range_by_offset(&self, offset: usize) -> (KeyVec, (usize, usize)) {
         let mut data: &[u8] = &self.block.data[offset..];
-        let key_len: usize = data.get_u16().into();
+        let overlap_len: usize = data.get_u16().into();
+        let rest_key_len: usize = data.get_u16().into();
+        let mut key = Vec::with_capacity(overlap_len + rest_key_len);
 
-        let key = KeySlice::from_slice(&data[..key_len]).to_key_vec();
-        data.advance(key_len);
+        key.extend_from_slice(&self.first_key.raw_ref()[..overlap_len]);
+        key.extend_from_slice(&data[..rest_key_len]);
+        data.advance(rest_key_len);
+
+        let key = KeyVec::from_vec(key);
 
         let value_len: usize = data.get_u16().into();
-        let value_start = offset + SIZE_KEY_LEN + key_len + SIZE_VALUE_LEN;
+        let value_start = offset + SIZE_KEY_LEN + rest_key_len + SIZE_VALUE_LEN;
         (key, (value_start, value_start + value_len))
     }
 }

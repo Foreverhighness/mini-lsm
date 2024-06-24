@@ -8,7 +8,9 @@ pub use iterator::BlockIterator;
 const SIZE_NUM_OF_ELEMENT: usize = std::mem::size_of::<u16>();
 const SIZE_OF_DATA_ELEMENT: usize = std::mem::size_of::<u8>();
 const SIZE_OF_OFFSET_ELEMENT: usize = std::mem::size_of::<u16>();
-const SIZE_KEY_LEN: usize = std::mem::size_of::<u16>();
+const SIZE_KEY_OVERLAP_LEN: usize = std::mem::size_of::<u16>();
+const SIZE_REST_KEY_LEN: usize = std::mem::size_of::<u16>();
+const SIZE_KEY_LEN: usize = SIZE_KEY_OVERLAP_LEN + SIZE_REST_KEY_LEN;
 const SIZE_VALUE_LEN: usize = std::mem::size_of::<u16>();
 
 /// A block is the smallest unit of read and caching in LSM tree. It is a collection of sorted key-value pairs.
