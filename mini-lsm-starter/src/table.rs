@@ -20,6 +20,7 @@ use crate::lsm_storage::BlockCache;
 
 use self::bloom::Bloom;
 
+const SIZE_BLOOM_FILTER_OFFSET: u64 = std::mem::size_of::<u32>() as u64;
 const SIZE_META_BLOCK_OFFSET: u64 = std::mem::size_of::<u32>() as u64;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -134,15 +135,30 @@ impl SsTable {
 
     /// Open SSTable from a file.
     pub fn open(id: usize, block_cache: Option<Arc<BlockCache>>, file: FileObject) -> Result<Self> {
-        let len = file.1;
+        let mut len = file.1;
+
+        let bloom = {
+            let bloom_filter_offset =
+                file.read(len - SIZE_BLOOM_FILTER_OFFSET, SIZE_BLOOM_FILTER_OFFSET)?;
+            len -= SIZE_BLOOM_FILTER_OFFSET;
+
+            let mut bloom_filter_offset = &bloom_filter_offset[..];
+            let bloom_filter_offset = bloom_filter_offset.get_u32().into();
+
+            let bloom_filter_len = len - bloom_filter_offset;
+            len = bloom_filter_offset;
+            Bloom::decode(&file.read(bloom_filter_offset, bloom_filter_len)?)?
+        };
 
         let block_meta_offset = {
             let block_meta_offset =
                 file.read(len - SIZE_META_BLOCK_OFFSET, SIZE_META_BLOCK_OFFSET)?;
+            len -= SIZE_META_BLOCK_OFFSET;
+
             let mut block_meta_offset = &block_meta_offset[..];
             block_meta_offset.get_u32().into()
         };
-        let block_meta_len = len - SIZE_META_BLOCK_OFFSET - block_meta_offset;
+        let block_meta_len = len - block_meta_offset;
         let block_meta =
             BlockMeta::decode_block_meta(&file.read(block_meta_offset, block_meta_len)?[..]);
 
@@ -150,6 +166,9 @@ impl SsTable {
         let last_key = KeyBytes::clone(&block_meta.last().unwrap().last_key);
 
         let block_meta_offset = block_meta_offset.try_into().unwrap();
+
+        let bloom = Some(bloom);
+
         Ok(SsTable {
             file,
             block_meta,
@@ -158,7 +177,7 @@ impl SsTable {
             block_cache,
             first_key,
             last_key,
-            bloom: None,
+            bloom,
             max_ts: Default::default(),
         })
     }
