@@ -41,11 +41,17 @@ impl BlockBuilder {
     pub fn add(&mut self, key: KeySlice, value: &[u8]) -> bool {
         debug_assert!(!key.is_empty());
 
-        let key_len: u16 = key.len().try_into().unwrap();
+        let key_overlap_len = key
+            .raw_ref()
+            .iter()
+            .zip(self.first_key.raw_ref().iter())
+            .take_while(|(&a, &b)| a == b)
+            .count();
+        let rest_key_len = key.len() - key_overlap_len;
         let value_len: u16 = value.len().try_into().unwrap();
         let offset: u16 = self.offset.try_into().unwrap();
 
-        let data_size = SIZE_KEY_LEN + key.len() + SIZE_VALUE_LEN + value.len();
+        let data_size = SIZE_KEY_LEN + rest_key_len + SIZE_VALUE_LEN + value.len();
 
         let exceeds_block_size =
             self.size + data_size + SIZE_OF_OFFSET_ELEMENT + SIZE_NUM_OF_ELEMENT > self.block_size;
@@ -56,8 +62,9 @@ impl BlockBuilder {
             self.first_key = key.to_key_vec();
         }
 
-        self.data.put_u16(key_len);
-        self.data.put_slice(key.raw_ref());
+        self.data.put_u16(key_overlap_len.try_into().unwrap());
+        self.data.put_u16(rest_key_len.try_into().unwrap());
+        self.data.put_slice(&key.raw_ref()[key_overlap_len..]);
         self.data.put_u16(value_len);
         self.data.put_slice(value);
 
