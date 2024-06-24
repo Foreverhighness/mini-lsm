@@ -320,13 +320,19 @@ impl LsmStorageInner {
             first_key <= key && key <= last_key
         };
 
+        let key_in_bloom = move |sst: &Arc<SsTable>| {
+            sst.bloom.as_ref().map_or(true, |bloom| {
+                bloom.may_contain(farmhash::fingerprint32(key))
+            })
+        };
+
         let key = KeySlice::from_slice(key);
         let sst_iters = snapshot
             .l0_sstables
             .iter()
             .filter_map(|sst_id| {
                 let sst = &snapshot.sstables[sst_id];
-                key_within_sst(sst).then(|| {
+                (key_within_sst(sst) && key_in_bloom(sst)).then(|| {
                     let table = Arc::clone(sst);
                     let iter = SsTableIterator::create_and_seek_to_key(table, key);
                     iter.map(Box::new)

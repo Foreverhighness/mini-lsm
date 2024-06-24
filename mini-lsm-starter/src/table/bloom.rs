@@ -8,6 +8,8 @@
 use anyhow::Result;
 use bytes::{BufMut, Bytes, BytesMut};
 
+pub const BLOOM_DEFAULT_FPR: f64 = 0.01;
+
 /// Implements a bloom filter
 #[derive(Debug)]
 pub struct Bloom {

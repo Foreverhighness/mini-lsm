@@ -8,7 +8,10 @@ use std::sync::Arc;
 use anyhow::Result;
 use bytes::{BufMut, Bytes};
 
-use super::{BlockMeta, FileObject, SsTable};
+use super::{
+    bloom::{Bloom, BLOOM_DEFAULT_FPR},
+    BlockMeta, FileObject, SsTable,
+};
 use crate::{
     block::BlockBuilder,
     key::{KeyBytes, KeySlice},
@@ -23,6 +26,7 @@ pub struct SsTableBuilder {
     data: Vec<u8>,
     pub(crate) meta: Vec<BlockMeta>,
     block_size: usize,
+    key_hashes: Vec<u32>,
 }
 
 impl SsTableBuilder {
@@ -35,6 +39,7 @@ impl SsTableBuilder {
             data: Vec::new(),
             meta: Vec::new(),
             block_size,
+            key_hashes: Vec::new(),
         }
     }
 
@@ -46,6 +51,9 @@ impl SsTableBuilder {
         if self.first_key.is_empty() {
             key.raw_ref().clone_into(&mut self.first_key);
         }
+
+        let hash = farmhash::fingerprint32(key.raw_ref());
+        self.key_hashes.push(hash);
 
         let not_full = self.builder.add(key, value);
         if not_full {
@@ -102,11 +110,20 @@ impl SsTableBuilder {
     ) -> Result<SsTable> {
         self.flush_block();
 
+        let bloom = {
+            let bits_per_key = Bloom::bloom_bits_per_key(self.key_hashes.len(), BLOOM_DEFAULT_FPR);
+            Bloom::build_from_key_hashes(&self.key_hashes, bits_per_key)
+        };
+
         let block_meta_offset = self.data.len();
 
         let file = {
             BlockMeta::encode_block_meta(&self.meta, &mut self.data);
             self.data.put_u32(block_meta_offset.try_into().unwrap());
+
+            let bloom_filter_offset = self.data.len();
+            bloom.encode(&mut self.data);
+            self.data.put_u32(bloom_filter_offset.try_into().unwrap());
 
             FileObject::create(path.as_ref(), &self.data).unwrap()
         };
@@ -114,6 +131,8 @@ impl SsTableBuilder {
         let block_meta = self.meta;
         let first_key = KeyBytes::clone(&block_meta.first().unwrap().first_key);
         let last_key = KeyBytes::clone(&block_meta.last().unwrap().last_key);
+
+        let bloom = Some(bloom);
 
         Ok(SsTable {
             file,
@@ -123,7 +142,7 @@ impl SsTableBuilder {
             block_cache,
             first_key,
             last_key,
-            bloom: None,
+            bloom,
             max_ts: Default::default(),
         })
     }
