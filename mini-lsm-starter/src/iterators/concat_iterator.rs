@@ -51,28 +51,6 @@ impl SstConcatIterator {
     }
 
     pub fn create_and_seek_to_key(sstables: Vec<Arc<SsTable>>, key: KeySlice) -> Result<Self> {
-        let find_sst_idx = move |sstables: &Vec<Arc<SsTable>>, key: KeySlice| {
-            let len = sstables.len();
-            let check = move |idx| {
-                let sst: &Arc<SsTable> = &sstables[idx];
-                let first_key = sst.first_key().as_key_slice();
-                first_key < key
-            };
-
-            let mut left = 0;
-            let mut right = len;
-            while right > left + 1 {
-                let mid = (left + right) / 2;
-
-                if check(mid) {
-                    left = mid;
-                } else {
-                    right = mid;
-                }
-            }
-            left
-        };
-
         if sstables.is_empty() {
             return Ok(SstConcatIterator {
                 current: None,
@@ -81,7 +59,10 @@ impl SstConcatIterator {
             });
         }
 
-        let sst_idx = find_sst_idx(&sstables, key);
+        let sst_idx = sstables
+            .partition_point(|sst| sst.first_key().as_key_slice() <= key)
+            .saturating_sub(1);
+
         let iter = SsTableIterator::create_and_seek_to_key(Arc::clone(&sstables[sst_idx]), key)?;
         let need_next_sst = !iter.is_valid();
         let mut iter = SstConcatIterator {
