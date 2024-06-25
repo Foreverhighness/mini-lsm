@@ -17,6 +17,7 @@ pub use simple_leveled::{
 };
 pub use tiered::{TieredCompactionController, TieredCompactionOptions, TieredCompactionTask};
 
+use crate::iterators::concat_iterator::SstConcatIterator;
 use crate::iterators::merge_iterator::MergeIterator;
 use crate::iterators::two_merge_iterator::TwoMergeIterator;
 use crate::iterators::StorageIterator;
@@ -130,25 +131,22 @@ impl LsmStorageInner {
         l0_sstables: &[usize],
         l1_sstables: &[usize],
     ) -> Result<Vec<Arc<SsTable>>> {
-        let l0_iter = l0_sstables
+        let l0_iters = l0_sstables
             .iter()
             .map(|sst_id| {
                 let table = Arc::clone(&snapshot.sstables[sst_id]);
                 let iter = SsTableIterator::create_and_seek_to_first(table);
                 iter.map(Box::new)
             })
-            .collect::<Result<_>>()
-            .map(MergeIterator::create)?;
+            .collect::<Result<_>>()?;
+        let l0_iter = MergeIterator::create(l0_iters);
 
-        let l1_iter = l1_sstables
-            .iter()
-            .map(|sst_id| {
-                let table = Arc::clone(&snapshot.sstables[sst_id]);
-                let iter = SsTableIterator::create_and_seek_to_first(table);
-                iter.map(Box::new)
-            })
-            .collect::<Result<_>>()
-            .map(MergeIterator::create)?;
+        let l1_iter = SstConcatIterator::create_and_seek_to_first(
+            l1_sstables
+                .iter()
+                .map(|id| Arc::clone(&snapshot.sstables[id]))
+                .collect(),
+        )?;
 
         let mut iter = TwoMergeIterator::create(l0_iter, l1_iter)?;
 
