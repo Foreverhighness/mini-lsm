@@ -1,5 +1,4 @@
 #![allow(dead_code)] // REMOVE THIS LINE after fully implementing this functionality
-#![allow(clippy::unused_self)] // TODO(fh): remove clippy allow
 #![allow(clippy::unnecessary_wraps)] // TODO(fh): remove clippy allow
 
 mod leveled;

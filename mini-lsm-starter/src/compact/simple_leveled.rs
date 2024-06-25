@@ -99,7 +99,7 @@ impl SimpleLeveledCompactionController {
             ref upper_level_sst_ids,
             lower_level,
             ref lower_level_sst_ids,
-            is_lower_level_bottom_level: _,
+            ..
         } = *task;
 
         let deleted_sst_ids = upper_level_sst_ids
