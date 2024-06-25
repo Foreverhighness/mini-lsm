@@ -126,7 +126,7 @@ impl LsmStorageInner {
 
     fn do_force_full_compaction(
         &self,
-        snapshot: Arc<LsmStorageState>,
+        snapshot: &LsmStorageState,
         l0_sstables: &[usize],
         l1_sstables: &[usize],
     ) -> Result<Vec<Arc<SsTable>>> {
@@ -183,7 +183,7 @@ impl LsmStorageInner {
             CompactionTask::ForceFullCompaction {
                 ref l0_sstables,
                 ref l1_sstables,
-            } => self.do_force_full_compaction(snapshot, l0_sstables, l1_sstables),
+            } => self.do_force_full_compaction(&snapshot, l0_sstables, l1_sstables),
             _ => unimplemented!(),
         }
     }
