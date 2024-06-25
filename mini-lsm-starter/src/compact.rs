@@ -191,8 +191,6 @@ impl LsmStorageInner {
     }
 
     pub fn force_full_compaction(&self) -> Result<()> {
-        let _guard = self.state_lock.lock();
-
         let snapshot = {
             let guard = self.state.read();
             Arc::clone(&guard)
@@ -200,6 +198,11 @@ impl LsmStorageInner {
 
         let l0_sstables = &snapshot.l0_sstables;
         let l1_sstables = &snapshot.levels[0].1;
+        // drop(snapshot); // Is it cheaper to clone l0|l1_sstables than holding an Arc?
+
+        if l0_sstables.is_empty() {
+            return Ok(());
+        }
 
         let task = CompactionTask::ForceFullCompaction {
             l0_sstables: l0_sstables.clone(),
@@ -207,33 +210,38 @@ impl LsmStorageInner {
         };
 
         let new_l1_sstables = self.compact(&task)?;
+        {
+            let _guard = self.state_lock.lock();
+            let mut guard_arc_state = self.state.write();
 
-        let mut guard_arc_state = self.state.write();
+            let old_state = guard_arc_state.as_ref();
+            let mut new_state = old_state.clone();
 
-        let old_state = guard_arc_state.as_ref();
-        let mut new_state = old_state.clone();
-        let l1_table_ids = new_l1_sstables.iter().map(|sst| sst.sst_id()).collect();
+            let new_l0_len = new_state.l0_sstables.len() - l0_sstables.len();
+            debug_assert_eq!(&l0_sstables[..], &new_state.l0_sstables[new_l0_len..]);
+            new_state.l0_sstables.truncate(new_l0_len);
 
-        let old_l0_sstables = std::mem::take(&mut new_state.l0_sstables);
-        debug_assert_eq!(&old_l0_sstables, l0_sstables);
+            debug_assert_eq!(new_state.levels[0].0, 1);
+            debug_assert_eq!(&new_state.levels[0].1, l1_sstables);
+            let l1_table_ids = new_l1_sstables.iter().map(|sst| sst.sst_id()).collect();
+            new_state.levels[0] = (1, l1_table_ids);
 
-        let (level, old_l1_sstables) =
-            std::mem::replace(&mut new_state.levels[0], (1, l1_table_ids));
-        debug_assert_eq!(level, 1);
-        debug_assert_eq!(&old_l1_sstables, l1_sstables);
+            for id in l0_sstables.iter().chain(l1_sstables.iter()) {
+                let found = new_state.sstables.remove(id).is_some();
+                debug_assert!(found);
+            }
+            let expected_new_len = new_state.sstables.len() + new_l1_sstables.len();
+            new_state
+                .sstables
+                .extend(new_l1_sstables.into_iter().map(|sst| (sst.sst_id(), sst)));
+            debug_assert_eq!(new_state.sstables.len(), expected_new_len);
 
-        new_state.sstables.clear();
-        new_state.sstables = new_l1_sstables
-            .into_iter()
-            .map(|sst| (sst.sst_id(), sst))
-            .collect();
+            *guard_arc_state = Arc::new(new_state);
+        }
 
-        *guard_arc_state = Arc::new(new_state);
-        drop(guard_arc_state);
-
-        // for &id in l0_sstables.iter().chain(l1_sstables.iter()) {
-        //     std::fs::remove_file(self.path_of_sst(id))?;
-        // }
+        for &id in l0_sstables.iter().chain(l1_sstables.iter()) {
+            std::fs::remove_file(self.path_of_sst(id))?;
+        }
 
         Ok(())
     }
