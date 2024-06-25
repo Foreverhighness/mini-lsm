@@ -73,6 +73,14 @@ impl SstConcatIterator {
             left
         };
 
+        if sstables.is_empty() {
+            return Ok(SstConcatIterator {
+                current: None,
+                next_sst_idx: 0,
+                sstables,
+            });
+        }
+
         let sst_idx = find_sst_idx(&sstables, key);
         let iter = SsTableIterator::create_and_seek_to_key(Arc::clone(&sstables[sst_idx]), key)?;
         let need_next_sst = !iter.is_valid();
