@@ -1,7 +1,3 @@
-#![allow(unused_variables)] // TODO(you): remove this lint after implementing this mod
-#![allow(dead_code)] // TODO(you): remove this lint after implementing this mod
-#![allow(clippy::needless_pass_by_value)] // TODO(fh): remove clippy allow
-
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -110,7 +106,7 @@ impl StorageIterator for SstConcatIterator {
     fn num_active_iterators(&self) -> usize {
         self.current
             .as_ref()
-            .map(|iter| iter.num_active_iterators())
+            .map(StorageIterator::num_active_iterators)
             .unwrap_or(0)
     }
 }

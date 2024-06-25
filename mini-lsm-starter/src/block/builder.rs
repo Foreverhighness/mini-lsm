@@ -45,7 +45,7 @@ impl BlockBuilder {
             .raw_ref()
             .iter()
             .zip(self.first_key.raw_ref().iter())
-            .take_while(|(&a, &b)| a == b)
+            .take_while(|&(&a, &b)| a == b)
             .count();
         let rest_key_len = key.len() - key_overlap_len;
         let value_len: u16 = value.len().try_into().unwrap();
