@@ -315,8 +315,19 @@ impl LsmStorageInner {
                 let _guard = self.state_lock.lock();
                 let mut guard_arc_state = self.state.write();
 
-                let (new_state, deleted_ids) =
+                let (mut new_state, deleted_ids) =
                     ctrl.apply_compaction_result(guard_arc_state.as_ref(), &task, &output);
+
+                for id in &deleted_ids {
+                    let found = new_state.sstables.remove(id).is_some();
+                    debug_assert!(found);
+                }
+                let expected_new_len = new_state.sstables.len() + output.len();
+                new_state
+                    .sstables
+                    .extend(output.into_iter().zip(new_lower_level_sstables));
+                debug_assert_eq!(new_state.sstables.len(), expected_new_len);
+
                 *guard_arc_state = Arc::new(new_state);
                 deleted_ids
             };
