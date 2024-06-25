@@ -345,17 +345,24 @@ impl LsmStorageInner {
             return Ok(Some(Bytes::copy_from_slice(l0_iter.value())).filter(|v| !v.is_empty()));
         }
 
-        let l1_sstables = snapshot.levels[0]
-            .1
+        let level_iters = snapshot
+            .levels
             .iter()
-            .filter_map(|sst_id| {
-                let sst = &snapshot.sstables[sst_id];
-                (key_within_sst(sst) && key_in_bloom(sst)).then(move || Arc::clone(sst))
+            .filter_map(|(_, sst_ids)| {
+                let sstables = sst_ids
+                    .iter()
+                    .filter_map(|sst_id| {
+                        let sst = &snapshot.sstables[sst_id];
+                        (key_within_sst(sst) && key_in_bloom(sst)).then(move || Arc::clone(sst))
+                    })
+                    .collect::<Vec<_>>();
+                (!sstables.is_empty())
+                    .then(|| SstConcatIterator::create_and_seek_to_key(sstables, key).map(Box::new))
             })
-            .collect();
-        let l1_iter = SstConcatIterator::create_and_seek_to_key(l1_sstables, key)?;
-        if l1_iter.is_valid() && l1_iter.key() == key {
-            return Ok(Some(Bytes::copy_from_slice(l1_iter.value())).filter(|v| !v.is_empty()));
+            .collect::<Result<_>>()?;
+        let level_iter = MergeIterator::create(level_iters);
+        if level_iter.is_valid() && level_iter.key() == key {
+            return Ok(Some(Bytes::copy_from_slice(level_iter.value())).filter(|v| !v.is_empty()));
         }
 
         Ok(None)
@@ -534,19 +541,26 @@ impl LsmStorageInner {
             .collect::<Result<_>>()?;
         let l0_iter = MergeIterator::create(l0_iters);
 
-        let l1_sstables = snapshot.levels[0]
-            .1
+        let level_iters = snapshot
+            .levels
             .iter()
-            .filter_map(|sst_id| {
-                let sst = &snapshot.sstables[sst_id];
-                range_overlap_with_sst(sst).then(move || Arc::clone(sst))
+            .filter_map(|(_, sst_ids)| {
+                let sstables = sst_ids
+                    .iter()
+                    .filter_map(|sst_id| {
+                        let sst = &snapshot.sstables[sst_id];
+                        range_overlap_with_sst(sst).then(move || Arc::clone(sst))
+                    })
+                    .collect::<Vec<_>>();
+                (!sstables.is_empty())
+                    .then(|| SstConcatIterator::create_and_seek_to_first(sstables).map(Box::new))
             })
-            .collect();
-        let l1_iter = SstConcatIterator::create_and_seek_to_first(l1_sstables)?;
+            .collect::<Result<_>>()?;
+        let level_iter = MergeIterator::create(level_iters);
 
         let memtable_l0_iter = TwoMergeIterator::create(memtable_iter, l0_iter)?;
 
-        let iter = TwoMergeIterator::create(memtable_l0_iter, l1_iter)?;
+        let iter = TwoMergeIterator::create(memtable_l0_iter, level_iter)?;
         let lsm_iter = LsmIterator::new(iter, upper)?;
         Ok(FusedIterator::new(lsm_iter))
     }
