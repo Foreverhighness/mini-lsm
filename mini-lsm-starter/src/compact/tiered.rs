@@ -31,9 +31,47 @@ impl TieredCompactionController {
 
     pub fn generate_compaction_task(
         &self,
-        _snapshot: &LsmStorageState,
+        snapshot: &LsmStorageState,
     ) -> Option<TieredCompactionTask> {
-        unimplemented!()
+        let tiers = &snapshot.levels;
+        let len = tiers.len();
+        if len < self.options.num_tiers {
+            return None;
+        }
+
+        let all_levels_size: usize = tiers.iter().map(|(_, sst_ids)| sst_ids.len()).sum();
+        let last_level_size = tiers[len - 1].1.len();
+        let all_levels_except_last_level_size = all_levels_size - last_level_size;
+
+        let trigger_space_amplification_ratio = 100 * all_levels_except_last_level_size
+            >= self.options.max_size_amplification_percent * last_level_size;
+        if trigger_space_amplification_ratio {
+            return Some(TieredCompactionTask {
+                tiers: tiers.clone(),
+                bottom_tier_included: true,
+            });
+        }
+
+        let mut size_of_all_previous_tiers = 0;
+        for (idx, (_, tier)) in (1..=len).zip(tiers) {
+            let size_of_this_tier = tier.len();
+
+            let trigger_size_ratio = 100 * size_of_all_previous_tiers
+                >= (100 + self.options.size_ratio) * size_of_this_tier;
+            if idx >= self.options.min_merge_width && trigger_size_ratio {
+                return Some(TieredCompactionTask {
+                    tiers: tiers[..idx].to_vec(),
+                    bottom_tier_included: idx == len,
+                });
+            }
+            size_of_all_previous_tiers += size_of_this_tier;
+        }
+
+        let end = len - self.options.num_tiers + 2;
+        Some(TieredCompactionTask {
+            tiers: tiers[..end].to_vec(),
+            bottom_tier_included: false,
+        })
     }
 
     pub fn apply_compaction_result(
@@ -63,7 +101,7 @@ impl TieredCompactionController {
 
             // Correct way is truncate then push
             // new_state.levels.truncate(new_tier_len);
-            // new_state.levels.push((new_tier_id, output.to_owned()));
+            // new_state.levels.push((new_tier_id, output.to_vec()));
             new_state.levels.truncate(new_tier_len + 1);
             let new_tier = &mut new_state.levels[new_tier_len];
             new_tier.0 = new_tier_id;
@@ -82,7 +120,7 @@ impl TieredCompactionController {
             // debug_assert_eq!(&old_tiers, tiers);
             // new_state
             //     .levels
-            //     .insert(start, (new_tier_id, output.to_owned()));
+            //     .insert(start, (new_tier_id, output.to_vec()));
             let end = start + tiers.len() - 1;
             let end_element = new_state.levels[end].clone();
             let old_tiers = new_state.levels.drain(start..end);
