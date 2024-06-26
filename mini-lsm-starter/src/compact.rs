@@ -129,6 +129,7 @@ impl LsmStorageInner {
         snapshot: &LsmStorageState,
         l0_sst_ids: &[usize],
         l1_sst_ids: &[usize],
+        compact_to_bottom_level: bool,
     ) -> Result<Vec<Arc<SsTable>>> {
         let l0_iters = l0_sst_ids
             .iter()
@@ -147,7 +148,7 @@ impl LsmStorageInner {
         let l1_iter = SstConcatIterator::create_and_seek_to_first(l1_sstables)?;
 
         let iter = TwoMergeIterator::create(l0_iter, l1_iter)?;
-        self.build_sstables_from_iter(iter)
+        self.build_sstables_from_iter(iter, compact_to_bottom_level)
     }
 
     fn two_level_compaction(
@@ -155,6 +156,7 @@ impl LsmStorageInner {
         snapshot: &LsmStorageState,
         upper_level_sst_ids: &[usize],
         lower_level_sst_ids: &[usize],
+        compact_to_bottom_level: bool,
     ) -> Result<Vec<Arc<SsTable>>> {
         let upper_level_sstables = upper_level_sst_ids
             .iter()
@@ -169,17 +171,18 @@ impl LsmStorageInner {
         let lower_level_iter = SstConcatIterator::create_and_seek_to_first(lower_level_sstables)?;
 
         let iter = TwoMergeIterator::create(upper_level_iter, lower_level_iter)?;
-        self.build_sstables_from_iter(iter)
+        self.build_sstables_from_iter(iter, compact_to_bottom_level)
     }
 
     fn tiered_compaction(
         &self,
         snapshot: &LsmStorageState,
         tiers: &[(usize, Vec<usize>)],
+        compact_to_bottom_level: bool,
     ) -> Result<Vec<Arc<SsTable>>> {
         debug_assert!(tiers.len() >= 2);
         if tiers.len() == 2 {
-            self.two_level_compaction(snapshot, &tiers[0].1, &tiers[1].1)
+            self.two_level_compaction(snapshot, &tiers[0].1, &tiers[1].1, compact_to_bottom_level)
         } else {
             let level_iters = tiers
                 .iter()
@@ -193,11 +196,15 @@ impl LsmStorageInner {
                 })
                 .collect::<Result<_>>()?;
             let iter = MergeIterator::create(level_iters);
-            self.build_sstables_from_iter(iter)
+            self.build_sstables_from_iter(iter, compact_to_bottom_level)
         }
     }
 
-    fn build_sstables_from_iter<I>(&self, mut iter: I) -> Result<Vec<Arc<SsTable>>>
+    fn build_sstables_from_iter<I>(
+        &self,
+        mut iter: I,
+        compact_to_bottom_level: bool,
+    ) -> Result<Vec<Arc<SsTable>>>
     where
         I: 'static + for<'a> StorageIterator<KeyType<'a> = KeySlice<'a>>,
     {
@@ -206,7 +213,7 @@ impl LsmStorageInner {
         while iter.is_valid() {
             let key = iter.key();
             let value = iter.value();
-            if !value.is_empty() {
+            if !compact_to_bottom_level || !value.is_empty() {
                 let builder_mut =
                     builder.get_or_insert_with(|| SsTableBuilder::new(self.options.block_size));
                 builder_mut.add(key, value);
@@ -230,17 +237,20 @@ impl LsmStorageInner {
         snapshot: &LsmStorageState,
         task: &SimpleLeveledCompactionTask,
     ) -> Result<Vec<Arc<SsTable>>> {
+        let compact_to_bottom_level = task.is_lower_level_bottom_level;
         if task.upper_level.is_some() {
             self.two_level_compaction(
                 snapshot,
                 &task.upper_level_sst_ids,
                 &task.lower_level_sst_ids,
+                compact_to_bottom_level,
             )
         } else {
             self.l0_l1_compaction(
                 snapshot,
                 &task.upper_level_sst_ids,
                 &task.lower_level_sst_ids,
+                compact_to_bottom_level,
             )
         }
     }
@@ -250,7 +260,7 @@ impl LsmStorageInner {
         snapshot: &LsmStorageState,
         task: &TieredCompactionTask,
     ) -> Result<Vec<Arc<SsTable>>> {
-        self.tiered_compaction(snapshot, &task.tiers)
+        self.tiered_compaction(snapshot, &task.tiers, task.bottom_tier_included)
     }
 
     fn compact(&self, task: &CompactionTask) -> Result<Vec<Arc<SsTable>>> {
@@ -263,7 +273,7 @@ impl LsmStorageInner {
             CompactionTask::ForceFullCompaction {
                 ref l0_sstables,
                 ref l1_sstables,
-            } => self.l0_l1_compaction(snapshot, l0_sstables, l1_sstables),
+            } => self.l0_l1_compaction(snapshot, l0_sstables, l1_sstables, true),
             CompactionTask::Simple(ref task) => self.do_simple_compaction(snapshot, task),
             CompactionTask::Tiered(ref task) => self.do_tiered_compaction(snapshot, task),
             _ => unimplemented!(),
