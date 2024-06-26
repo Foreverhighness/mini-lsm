@@ -80,6 +80,7 @@ impl TieredCompactionController {
         task: &TieredCompactionTask,
         output: &[usize],
     ) -> (LsmStorageState, Vec<usize>) {
+        debug_assert!(snapshot.l0_sstables.is_empty());
         let mut new_state = snapshot.clone();
         let TieredCompactionTask {
             ref tiers,
@@ -91,7 +92,6 @@ impl TieredCompactionController {
             .flat_map(|(_, tier)| tier.iter())
             .copied()
             .collect::<Vec<_>>();
-        debug_assert_eq!(output.len(), deleted_sst_ids.len());
 
         let new_tier_id = output[0];
 

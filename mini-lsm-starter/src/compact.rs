@@ -150,7 +150,7 @@ impl LsmStorageInner {
         self.build_sstables_from_iter(iter)
     }
 
-    fn simple_level_compaction(
+    fn two_level_compaction(
         &self,
         snapshot: &LsmStorageState,
         upper_level_sst_ids: &[usize],
@@ -170,6 +170,31 @@ impl LsmStorageInner {
 
         let iter = TwoMergeIterator::create(upper_level_iter, lower_level_iter)?;
         self.build_sstables_from_iter(iter)
+    }
+
+    fn tiered_compaction(
+        &self,
+        snapshot: &LsmStorageState,
+        tiers: &[(usize, Vec<usize>)],
+    ) -> Result<Vec<Arc<SsTable>>> {
+        debug_assert!(tiers.len() >= 2);
+        if tiers.len() == 2 {
+            self.two_level_compaction(snapshot, &tiers[0].1, &tiers[1].1)
+        } else {
+            let level_iters = tiers
+                .iter()
+                .map(|(_, sst_ids)| {
+                    let sstables = sst_ids
+                        .iter()
+                        .map(|sst_id| Arc::clone(&snapshot.sstables[sst_id]))
+                        .collect::<Vec<_>>();
+                    let iter = SstConcatIterator::create_and_seek_to_first(sstables);
+                    iter.map(Box::new)
+                })
+                .collect::<Result<_>>()?;
+            let iter = MergeIterator::create(level_iters);
+            self.build_sstables_from_iter(iter)
+        }
     }
 
     fn build_sstables_from_iter<I>(&self, mut iter: I) -> Result<Vec<Arc<SsTable>>>
@@ -206,7 +231,7 @@ impl LsmStorageInner {
         task: &SimpleLeveledCompactionTask,
     ) -> Result<Vec<Arc<SsTable>>> {
         if task.upper_level.is_some() {
-            self.simple_level_compaction(
+            self.two_level_compaction(
                 snapshot,
                 &task.upper_level_sst_ids,
                 &task.lower_level_sst_ids,
@@ -218,6 +243,14 @@ impl LsmStorageInner {
                 &task.lower_level_sst_ids,
             )
         }
+    }
+
+    fn do_tiered_compaction(
+        &self,
+        snapshot: &LsmStorageState,
+        task: &TieredCompactionTask,
+    ) -> Result<Vec<Arc<SsTable>>> {
+        self.tiered_compaction(snapshot, &task.tiers)
     }
 
     fn compact(&self, task: &CompactionTask) -> Result<Vec<Arc<SsTable>>> {
@@ -232,6 +265,7 @@ impl LsmStorageInner {
                 ref l1_sstables,
             } => self.l0_l1_compaction(snapshot, l0_sstables, l1_sstables),
             CompactionTask::Simple(ref task) => self.do_simple_compaction(snapshot, task),
+            CompactionTask::Tiered(ref task) => self.do_tiered_compaction(snapshot, task),
             _ => unimplemented!(),
         }
     }
