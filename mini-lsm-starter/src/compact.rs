@@ -1,3 +1,4 @@
+#![allow(clippy::pattern_type_mismatch)]
 #![allow(dead_code)] // REMOVE THIS LINE after fully implementing this functionality
 #![allow(clippy::unnecessary_wraps)] // TODO(fh): remove clippy allow
 
@@ -70,7 +71,6 @@ impl CompactionController {
         }
     }
 
-    #[allow(clippy::pattern_type_mismatch)]
     pub fn apply_compaction_result(
         &self,
         snapshot: &LsmStorageState,
