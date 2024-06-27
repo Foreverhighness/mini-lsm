@@ -1,7 +1,3 @@
-#![allow(clippy::must_use_candidate)] // TODO(fh): remove clippy allow
-#![allow(clippy::missing_const_for_fn)] // TODO(fh): remove clippy allow
-#![allow(clippy::unused_self)] // TODO(fh): remove clippy allow
-
 use std::ops::Bound;
 
 use serde::{Deserialize, Serialize};
@@ -39,7 +35,6 @@ impl LeveledCompactionController {
     }
 
     fn lower_upper_key<'r, 's: 'r>(
-        &self,
         snapshot: &'s LsmStorageState,
         sst_ids: &[usize],
     ) -> (&'r [u8], &'r [u8]) {
@@ -54,13 +49,12 @@ impl LeveledCompactionController {
     }
 
     fn find_overlapping_ssts(
-        &self,
         snapshot: &LsmStorageState,
         sst_ids: &[usize],
         in_level: usize,
     ) -> Vec<usize> {
         debug_assert!(!sst_ids.is_empty());
-        let (lower_key, upper_key) = self.lower_upper_key(snapshot, sst_ids);
+        let (lower_key, upper_key) = Self::lower_upper_key(snapshot, sst_ids);
         let (lower, upper) = (Bound::Included(lower_key), Bound::Included(upper_key));
 
         let level = &snapshot.levels[in_level - 1].1;
@@ -152,7 +146,7 @@ impl LeveledCompactionController {
         if snapshot.l0_sstables.len() >= self.options.level0_file_num_compaction_trigger {
             let upper_level_sst_ids = &snapshot.l0_sstables;
             let lower_level_sst_ids =
-                self.find_overlapping_ssts(snapshot, upper_level_sst_ids, target_level);
+                Self::find_overlapping_ssts(snapshot, upper_level_sst_ids, target_level);
             return Some(LeveledCompactionTask {
                 upper_level: None,
                 upper_level_sst_ids: upper_level_sst_ids.clone(),
@@ -191,7 +185,7 @@ impl LeveledCompactionController {
                 .unwrap();
             let upper_level_sst_ids = vec![upper_level_sst_ids];
             let lower_level_sst_ids =
-                self.find_overlapping_ssts(snapshot, &upper_level_sst_ids, lower_level);
+                Self::find_overlapping_ssts(snapshot, &upper_level_sst_ids, lower_level);
             return Some(LeveledCompactionTask {
                 upper_level: Some(upper_level),
                 upper_level_sst_ids,
@@ -251,7 +245,7 @@ impl LeveledCompactionController {
         eprintln!("old_lower_level: {lower_level:?}");
         eprintln!("lower_level_sst_ids: {lower_level_sst_ids:?}");
         let start = {
-            let (lower_key, _) = self.lower_upper_key(snapshot, upper_level_sst_ids);
+            let (lower_key, _) = Self::lower_upper_key(snapshot, upper_level_sst_ids);
             let mut left = lower_level
                 .partition_point(|id| snapshot.sstables[id].first_key().raw_ref() <= lower_key)
                 .saturating_sub(1);
