@@ -27,7 +27,7 @@ use crate::lsm_iterator::{FusedIterator, LsmIterator};
 use crate::manifest::{Manifest, ManifestRecord};
 use crate::mem_table::MemTable;
 use crate::mvcc::LsmMvccInner;
-use crate::table::{SsTable, SsTableBuilder, SsTableIterator};
+use crate::table::{FileObject, SsTable, SsTableBuilder, SsTableIterator};
 
 pub type BlockCache = moka::sync::Cache<(usize, usize), Arc<Block>>;
 
@@ -258,6 +258,8 @@ impl LsmStorageInner {
     pub(crate) fn open(path: impl AsRef<Path>, options: LsmStorageOptions) -> Result<Self> {
         let path = path.as_ref();
         let mut state = LsmStorageState::create(&options);
+        let mut next_sst_id = 1;
+        let block_cache = Arc::new(BlockCache::new(1024));
 
         let compaction_controller = match options.compaction_options {
             CompactionOptions::Leveled(ref options) => {
@@ -307,6 +309,17 @@ impl LsmStorageInner {
                     ManifestRecord::NewMemtable(_) => todo!(),
                 }
             }
+
+            debug_assert!(state.sstables.is_empty());
+            debug_assert!(!sst_ids.is_empty());
+            next_sst_id = sst_ids.iter().max().unwrap() + 1;
+
+            for id in sst_ids {
+                let file = FileObject::open(&Self::path_of_sst_static(path, id))?;
+                let block_cache = Some(Arc::clone(&block_cache));
+                let sst = SsTable::open(id, block_cache, file)?;
+                state.sstables.insert(id, Arc::new(sst));
+            }
             manifest
         };
 
@@ -314,8 +327,8 @@ impl LsmStorageInner {
             state: Arc::new(RwLock::new(Arc::new(state))),
             state_lock: Mutex::new(()),
             path: path.to_path_buf(),
-            block_cache: Arc::new(BlockCache::new(1024)),
-            next_sst_id: AtomicUsize::new(1),
+            block_cache,
+            next_sst_id: AtomicUsize::new(next_sst_id),
             compaction_controller,
             manifest: Some(manifest),
             options: options.into(),
