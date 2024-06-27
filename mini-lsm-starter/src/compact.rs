@@ -1,6 +1,5 @@
 #![allow(clippy::pattern_type_mismatch)]
-#![allow(dead_code)] // REMOVE THIS LINE after fully implementing this functionality
-#![allow(clippy::unnecessary_wraps)] // TODO(fh): remove clippy allow
+#![allow(clippy::unnecessary_wraps)]
 
 mod leveled;
 mod simple_leveled;
@@ -237,8 +236,8 @@ impl LsmStorageInner {
         &self,
         snapshot: &LsmStorageState,
         task: &SimpleLeveledCompactionTask,
+        compact_to_bottom_level: bool,
     ) -> Result<Vec<Arc<SsTable>>> {
-        let compact_to_bottom_level = task.is_lower_level_bottom_level;
         if task.upper_level.is_some() {
             self.two_level_compaction(
                 snapshot,
@@ -260,16 +259,17 @@ impl LsmStorageInner {
         &self,
         snapshot: &LsmStorageState,
         task: &TieredCompactionTask,
+        compact_to_bottom_level: bool,
     ) -> Result<Vec<Arc<SsTable>>> {
-        self.tiered_compaction(snapshot, &task.tiers, task.bottom_tier_included)
+        self.tiered_compaction(snapshot, &task.tiers, compact_to_bottom_level)
     }
 
     fn do_level_compaction(
         &self,
         snapshot: &LsmStorageState,
         task: &LeveledCompactionTask,
+        compact_to_bottom_level: bool,
     ) -> Result<Vec<Arc<SsTable>>> {
-        let compact_to_bottom_level = task.is_lower_level_bottom_level;
         if task.upper_level.is_some() {
             self.two_level_compaction(
                 snapshot,
@@ -293,14 +293,21 @@ impl LsmStorageInner {
             &Arc::clone(&guard)
         };
 
+        let compact_to_bottom_level = task.compact_to_bottom_level();
         match *task {
             CompactionTask::ForceFullCompaction {
                 ref l0_sstables,
                 ref l1_sstables,
-            } => self.l0_l1_compaction(snapshot, l0_sstables, l1_sstables, true),
-            CompactionTask::Simple(ref task) => self.do_simple_compaction(snapshot, task),
-            CompactionTask::Tiered(ref task) => self.do_tiered_compaction(snapshot, task),
-            CompactionTask::Leveled(ref task) => self.do_level_compaction(snapshot, task),
+            } => self.l0_l1_compaction(snapshot, l0_sstables, l1_sstables, compact_to_bottom_level),
+            CompactionTask::Simple(ref task) => {
+                self.do_simple_compaction(snapshot, task, compact_to_bottom_level)
+            }
+            CompactionTask::Tiered(ref task) => {
+                self.do_tiered_compaction(snapshot, task, compact_to_bottom_level)
+            }
+            CompactionTask::Leveled(ref task) => {
+                self.do_level_compaction(snapshot, task, compact_to_bottom_level)
+            }
         }
     }
 
