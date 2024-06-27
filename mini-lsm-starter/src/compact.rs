@@ -230,6 +230,8 @@ impl LsmStorageInner {
             tables.push(self.build_sst(builder)?);
         }
 
+        self.sync_dir()?;
+
         Ok(tables)
     }
 

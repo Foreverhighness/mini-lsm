@@ -417,7 +417,7 @@ impl LsmStorageInner {
     }
 
     pub(super) fn sync_dir(&self) -> Result<()> {
-        unimplemented!()
+        Ok(std::fs::File::open(self.path.as_path())?.sync_all()?)
     }
 
     /// Force freeze the current memtable to an immutable memtable
@@ -458,6 +458,8 @@ impl LsmStorageInner {
                 let id = self.next_sst_id();
                 let block_cache = Arc::clone(&self.block_cache);
                 let sst = builder.build(id, Some(block_cache), self.path_of_sst(id))?;
+
+                self.sync_dir()?;
 
                 let mut guard_arc_state = self.state.write();
 
