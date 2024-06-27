@@ -24,7 +24,7 @@ use crate::iterators::two_merge_iterator::TwoMergeIterator;
 use crate::iterators::StorageIterator;
 use crate::key::KeySlice;
 use crate::lsm_iterator::{FusedIterator, LsmIterator};
-use crate::manifest::Manifest;
+use crate::manifest::{Manifest, ManifestRecord};
 use crate::mem_table::MemTable;
 use crate::mvcc::LsmMvccInner;
 use crate::table::{SsTable, SsTableBuilder, SsTableIterator};
@@ -477,6 +477,11 @@ impl LsmStorageInner {
 
                 *guard_arc_state = Arc::new(new_state);
                 drop(guard_arc_state);
+
+                let record = ManifestRecord::Flush(id);
+                if let Some(ref manifest) = self.manifest {
+                    manifest.add_record(&_guard, record)?;
+                }
             }
         } else {
             return Err(anyhow::anyhow!("there is no immutable memtable"));

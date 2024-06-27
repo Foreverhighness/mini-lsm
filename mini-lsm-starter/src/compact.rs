@@ -22,6 +22,7 @@ use crate::iterators::two_merge_iterator::TwoMergeIterator;
 use crate::iterators::StorageIterator;
 use crate::key::KeySlice;
 use crate::lsm_storage::{LsmStorageInner, LsmStorageState};
+use crate::manifest::ManifestRecord;
 use crate::table::{SsTable, SsTableBuilder, SsTableIterator};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -331,6 +332,10 @@ impl LsmStorageInner {
         };
 
         let new_l1_sstables = self.compact(&task)?;
+        let l1_table_ids = new_l1_sstables
+            .iter()
+            .map(|sst| sst.sst_id())
+            .collect::<Vec<_>>();
         {
             let _guard = self.state_lock.lock();
             let mut guard_arc_state = self.state.write();
@@ -344,8 +349,7 @@ impl LsmStorageInner {
 
             debug_assert_eq!(new_state.levels[0].0, 1);
             debug_assert_eq!(&new_state.levels[0].1, l1_sstables);
-            let l1_table_ids = new_l1_sstables.iter().map(|sst| sst.sst_id()).collect();
-            new_state.levels[0] = (1, l1_table_ids);
+            new_state.levels[0] = (1, l1_table_ids.clone());
 
             for id in l0_sstables.iter().chain(l1_sstables.iter()) {
                 let found = new_state.sstables.remove(id).is_some();
@@ -358,6 +362,11 @@ impl LsmStorageInner {
             debug_assert_eq!(new_state.sstables.len(), expected_new_len);
 
             *guard_arc_state = Arc::new(new_state);
+
+            let record = ManifestRecord::Compaction(task, l1_table_ids);
+            if let Some(ref manifest) = self.manifest {
+                manifest.add_record(&_guard, record)?;
+            }
         }
 
         for &id in l0_sstables.iter().chain(l1_sstables.iter()) {
@@ -398,10 +407,16 @@ impl LsmStorageInner {
                 let expected_new_len = new_state.sstables.len() + output.len();
                 new_state
                     .sstables
-                    .extend(output.into_iter().zip(new_lower_level_sstables));
+                    .extend(output.iter().copied().zip(new_lower_level_sstables));
                 debug_assert_eq!(new_state.sstables.len(), expected_new_len);
 
                 *guard_arc_state = Arc::new(new_state);
+
+                let record = ManifestRecord::Compaction(task, output);
+                if let Some(ref manifest) = self.manifest {
+                    manifest.add_record(&_guard, record)?;
+                }
+
                 deleted_ids
             };
 
