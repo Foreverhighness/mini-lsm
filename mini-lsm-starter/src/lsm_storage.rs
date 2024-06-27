@@ -3,7 +3,7 @@
 #![allow(clippy::unused_self)] // TODO(fh): remove clippy allow
 #![allow(clippy::unnecessary_wraps)] // TODO(fh): remove clippy allow
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ops::Bound;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicUsize;
@@ -257,7 +257,7 @@ impl LsmStorageInner {
     /// not exist.
     pub(crate) fn open(path: impl AsRef<Path>, options: LsmStorageOptions) -> Result<Self> {
         let path = path.as_ref();
-        let state = LsmStorageState::create(&options);
+        let mut state = LsmStorageState::create(&options);
 
         let compaction_controller = match options.compaction_options {
             CompactionOptions::Leveled(ref options) => {
@@ -272,6 +272,44 @@ impl LsmStorageInner {
             CompactionOptions::NoCompaction => CompactionController::NoCompaction,
         };
 
+        let manifest_path = &path.join("MANIFEST");
+        let manifest = if let Ok(manifest) = Manifest::create(manifest_path) {
+            manifest
+        } else {
+            let (manifest, records) = Manifest::recover(manifest_path)?;
+            let mut sst_ids = HashSet::new();
+            for record in records {
+                match record {
+                    ManifestRecord::Flush(id) => {
+                        if compaction_controller.flush_to_l0() {
+                            state.l0_sstables.insert(0, id);
+                        } else {
+                            state.levels.insert(0, (id, vec![id]));
+                        }
+
+                        let is_new_id = sst_ids.insert(id);
+                        debug_assert!(is_new_id);
+                    }
+                    ManifestRecord::Compaction(task, output) => {
+                        let (new_state, deleted_sst_ids) =
+                            compaction_controller.apply_compaction_result(&state, &task, &output);
+                        state = new_state;
+
+                        for id in &deleted_sst_ids {
+                            let found = sst_ids.remove(id);
+                            debug_assert!(found);
+                        }
+
+                        let expected_new_len = sst_ids.len() + output.len();
+                        sst_ids.extend(output);
+                        debug_assert_eq!(sst_ids.len(), expected_new_len);
+                    }
+                    ManifestRecord::NewMemtable(_) => todo!(),
+                }
+            }
+            manifest
+        };
+
         let storage = Self {
             state: Arc::new(RwLock::new(Arc::new(state))),
             state_lock: Mutex::new(()),
@@ -279,7 +317,7 @@ impl LsmStorageInner {
             block_cache: Arc::new(BlockCache::new(1024)),
             next_sst_id: AtomicUsize::new(1),
             compaction_controller,
-            manifest: None,
+            manifest: Some(manifest),
             options: options.into(),
             mvcc: None,
             compaction_filters: Arc::new(Mutex::new(Vec::new())),
