@@ -264,6 +264,29 @@ impl LsmStorageInner {
         self.tiered_compaction(snapshot, &task.tiers, task.bottom_tier_included)
     }
 
+    fn do_level_compaction(
+        &self,
+        snapshot: &LsmStorageState,
+        task: &LeveledCompactionTask,
+    ) -> Result<Vec<Arc<SsTable>>> {
+        let compact_to_bottom_level = task.is_lower_level_bottom_level;
+        if task.upper_level.is_some() {
+            self.two_level_compaction(
+                snapshot,
+                &task.upper_level_sst_ids,
+                &task.lower_level_sst_ids,
+                compact_to_bottom_level,
+            )
+        } else {
+            self.l0_l1_compaction(
+                snapshot,
+                &task.upper_level_sst_ids,
+                &task.lower_level_sst_ids,
+                compact_to_bottom_level,
+            )
+        }
+    }
+
     fn compact(&self, task: &CompactionTask) -> Result<Vec<Arc<SsTable>>> {
         let snapshot = {
             let guard = self.state.read();
@@ -277,7 +300,7 @@ impl LsmStorageInner {
             } => self.l0_l1_compaction(snapshot, l0_sstables, l1_sstables, true),
             CompactionTask::Simple(ref task) => self.do_simple_compaction(snapshot, task),
             CompactionTask::Tiered(ref task) => self.do_tiered_compaction(snapshot, task),
-            _ => unimplemented!(),
+            CompactionTask::Leveled(ref task) => self.do_level_compaction(snapshot, task),
         }
     }
 
