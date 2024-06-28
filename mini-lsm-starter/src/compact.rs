@@ -366,7 +366,7 @@ impl LsmStorageInner {
 
             let record = ManifestRecord::Compaction(task, l1_table_ids);
             if let Some(ref manifest) = self.manifest {
-                manifest.add_record(&guard, record)?;
+                manifest.add_record(&guard, &record)?;
             }
         }
 
@@ -415,7 +415,7 @@ impl LsmStorageInner {
 
                 let record = ManifestRecord::Compaction(task, output);
                 if let Some(ref manifest) = self.manifest {
-                    manifest.add_record(&guard, record)?;
+                    manifest.add_record(&guard, &record)?;
                 }
 
                 deleted_ids

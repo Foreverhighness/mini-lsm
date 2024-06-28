@@ -1,6 +1,3 @@
-#![allow(dead_code)] // REMOVE THIS LINE after fully implementing this functionality
-#![allow(clippy::needless_pass_by_value)] // TODO(fh): remove clippy allow
-
 use std::io::BufReader;
 use std::path::Path;
 use std::sync::Arc;
@@ -52,14 +49,14 @@ impl Manifest {
     pub fn add_record(
         &self,
         _state_lock_observer: &MutexGuard<()>,
-        record: ManifestRecord,
+        record: &ManifestRecord,
     ) -> Result<()> {
         self.add_record_when_init(record)
     }
 
-    pub fn add_record_when_init(&self, record: ManifestRecord) -> Result<()> {
+    pub fn add_record_when_init(&self, record: &ManifestRecord) -> Result<()> {
         let mut file = self.file.lock();
-        let json = serde_json::to_vec(&record)?;
+        let json = serde_json::to_vec(record)?;
 
         file.write_all(&json)?;
         file.sync_all()?;
