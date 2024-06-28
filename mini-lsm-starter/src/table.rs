@@ -31,11 +31,29 @@ pub struct BlockMeta {
     pub last_key: KeyBytes,
 }
 
+pub fn validate_checksum(mut buf: &[u8]) -> Result<&[u8]> {
+    let len = buf.len();
+    debug_assert!(len > SIZE_CHECKSUM);
+
+    let mut sum_in_buf = &buf[len - SIZE_CHECKSUM..];
+    let sum_in_buf = sum_in_buf.get_u32();
+
+    buf = &buf[..len - SIZE_CHECKSUM];
+    let checksum = crc32fast::hash(buf);
+    if sum_in_buf != checksum {
+        Err(anyhow!("Checksum validation failed"))
+    } else {
+        Ok(buf)
+    }
+}
+
 impl BlockMeta {
     /// Encode block meta to a buffer.
     /// You may add extra fields to the buffer,
     /// in order to help keep track of `first_key` when decoding from the same buffer in the future.
     pub fn encode_block_meta(block_meta: &[BlockMeta], buf: &mut Vec<u8>) {
+        let start = buf.len();
+
         buf.put_u16(block_meta.len().try_into().unwrap());
         for &BlockMeta {
             offset,
@@ -49,10 +67,15 @@ impl BlockMeta {
             buf.put_u16(last_key.len().try_into().unwrap());
             buf.put_slice(last_key.raw_ref());
         }
+
+        let checksum = crc32fast::hash(&buf[start..]);
+        buf.put_u32(checksum);
     }
 
     /// Decode block meta from a buffer.
-    pub fn decode_block_meta(mut buf: impl Buf) -> Vec<BlockMeta> {
+    pub fn decode_block_meta(mut buf: &[u8]) -> Result<Vec<BlockMeta>> {
+        buf = validate_checksum(buf)?;
+
         let len = buf.get_u16().into();
         let mut vec_block_meta = Vec::with_capacity(len);
         for _ in 0..len {
@@ -67,7 +90,7 @@ impl BlockMeta {
                 last_key,
             });
         }
-        vec_block_meta
+        Ok(vec_block_meta)
     }
 }
 
@@ -157,8 +180,8 @@ impl SsTable {
             block_meta_offset.get_u32().into()
         };
         let block_meta_len = len - block_meta_offset;
-        let block_meta =
-            BlockMeta::decode_block_meta(&file.read(block_meta_offset, block_meta_len)?[..]);
+        let buf = file.read(block_meta_offset, block_meta_len)?;
+        let block_meta = BlockMeta::decode_block_meta(&buf)?;
 
         let first_key = KeyBytes::clone(&block_meta.first().unwrap().first_key);
         let last_key = KeyBytes::clone(&block_meta.last().unwrap().last_key);
