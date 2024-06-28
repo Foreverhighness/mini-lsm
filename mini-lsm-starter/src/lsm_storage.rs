@@ -532,8 +532,32 @@ impl LsmStorageInner {
     }
 
     /// Write a batch of data into the storage. Implement in week 2 day 7.
-    pub fn write_batch<T: AsRef<[u8]>>(&self, _batch: &[WriteBatchRecord<T>]) -> Result<()> {
-        unimplemented!()
+    pub fn write_batch<T: AsRef<[u8]>>(&self, batch: &[WriteBatchRecord<T>]) -> Result<()> {
+        let guard_arc_state = self.state.read();
+        let memtable = &guard_arc_state.memtable;
+        for record in batch {
+            match *record {
+                WriteBatchRecord::Put(ref key, ref value) => {
+                    memtable.put(key.as_ref(), value.as_ref())?
+                }
+                WriteBatchRecord::Del(ref key) => memtable.put(key.as_ref(), &[])?,
+            }
+        }
+        let size = guard_arc_state.memtable.approximate_size();
+
+        drop(guard_arc_state);
+
+        let memtable_reaches_capacity_on_put = size >= self.options.target_sst_size;
+        if memtable_reaches_capacity_on_put {
+            let state_lock = self.state_lock.lock();
+            let current_memtable_reaches_capacity =
+                self.state.read().memtable.approximate_size() >= self.options.target_sst_size;
+            if current_memtable_reaches_capacity {
+                self.force_freeze_memtable(&state_lock)?;
+            }
+        }
+
+        Ok(())
     }
 
     /// Put a key-value pair into the storage by writing into the current memtable.
