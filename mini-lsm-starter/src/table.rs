@@ -19,6 +19,7 @@ use self::bloom::Bloom;
 
 const SIZE_BLOOM_FILTER_OFFSET: u64 = std::mem::size_of::<u32>() as u64;
 const SIZE_META_BLOCK_OFFSET: u64 = std::mem::size_of::<u32>() as u64;
+const SIZE_CHECKSUM: usize = std::mem::size_of::<u32>();
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BlockMeta {
@@ -219,6 +220,19 @@ impl SsTable {
             };
 
             debug_assert!(data.len() == len);
+
+            debug_assert!(len > SIZE_CHECKSUM);
+            let mut block_sum = &data[len - SIZE_CHECKSUM..];
+            let block_sum = block_sum.get_u32();
+            let checksum = crc32fast::hash(&data[..len - SIZE_CHECKSUM]);
+
+            if block_sum != checksum {
+                return Err(anyhow!("Checksum validation failed"));
+            }
+
+            let mut data = data;
+            data.truncate(len - SIZE_CHECKSUM);
+
             data
         };
         let block = Block::decode(&data[..]);

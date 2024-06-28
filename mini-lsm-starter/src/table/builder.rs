@@ -85,7 +85,10 @@ impl SsTableBuilder {
             }
         };
 
-        self.data.extend_from_slice(&block.encode());
+        let buf = block.encode();
+        self.data.extend_from_slice(&buf);
+        let checksum = crc32fast::hash(&buf);
+        self.data.put_u32(checksum);
         self.meta.push(meta);
     }
 
