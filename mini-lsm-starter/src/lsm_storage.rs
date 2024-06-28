@@ -554,7 +554,7 @@ impl LsmStorageInner {
         };
 
         if let Some(memtable) = snapshot.imm_memtables.last() {
-            let _guard = self.state_lock.lock();
+            let guard = self.state_lock.lock();
 
             let memtable_not_changed =
                 self.state.read().imm_memtables.last().map(|t| t.id()) == Some(memtable.id());
@@ -586,7 +586,7 @@ impl LsmStorageInner {
 
                 let record = ManifestRecord::Flush(id);
                 if let Some(ref manifest) = self.manifest {
-                    manifest.add_record(&_guard, record)?;
+                    manifest.add_record(&guard, record)?;
                 }
             }
         } else {
