@@ -6,7 +6,7 @@ use crate::{lsm_storage::LsmStorageState, table::SsTable};
 
 const MB: usize = 1024 * 1024;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LeveledCompactionTask {
     // if upper_level is `None`, then it is L0 compaction
     pub upper_level: Option<usize>,
