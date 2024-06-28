@@ -338,7 +338,7 @@ impl LsmStorageInner {
             .map(|sst| sst.sst_id())
             .collect::<Vec<_>>();
         {
-            let _guard = self.state_lock.lock();
+            let guard = self.state_lock.lock();
             let mut guard_arc_state = self.state.write();
 
             let old_state = guard_arc_state.as_ref();
@@ -366,7 +366,7 @@ impl LsmStorageInner {
 
             let record = ManifestRecord::Compaction(task, l1_table_ids);
             if let Some(ref manifest) = self.manifest {
-                manifest.add_record(&_guard, record)?;
+                manifest.add_record(&guard, record)?;
             }
         }
 
@@ -395,7 +395,7 @@ impl LsmStorageInner {
 
             // 3. update the LSM state.
             let deleted_ids = {
-                let _guard = self.state_lock.lock();
+                let guard = self.state_lock.lock();
                 let mut guard_arc_state = self.state.write();
 
                 let (mut new_state, deleted_ids) =
@@ -415,7 +415,7 @@ impl LsmStorageInner {
 
                 let record = ManifestRecord::Compaction(task, output);
                 if let Some(ref manifest) = self.manifest {
-                    manifest.add_record(&_guard, record)?;
+                    manifest.add_record(&guard, record)?;
                 }
 
                 deleted_ids
