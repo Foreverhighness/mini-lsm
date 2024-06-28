@@ -83,7 +83,7 @@ impl LsmStorageState {
     {
         let mut sst_ids = HashSet::new();
         let mut mmt_ids = VecDeque::new();
-        for record in records.into_iter() {
+        for record in records {
             match record {
                 ManifestRecord::Flush(sst_id) => {
                     if ctrl.flush_to_l0() {
@@ -144,7 +144,7 @@ impl LsmStorageState {
     where
         I: IntoIterator<Item = usize>,
     {
-        for id in mmt_ids.into_iter() {
+        for id in mmt_ids {
             let path = LsmStorageInner::path_of_wal_static(path, id);
             let memtable = MemTable::recover_from_wal(id, path)?;
 
@@ -268,7 +268,7 @@ impl LsmStorageInner {
 
             let record = ManifestRecord::Flush(id);
             if let Some(ref manifest) = self.manifest {
-                manifest.add_record(&guard, record)?;
+                manifest.add_record(&guard, &record)?;
             }
         }
         self.sync_dir()?;
@@ -297,10 +297,10 @@ impl MiniLsm {
             debug_assert!(ok);
         }
 
-        if !self.inner.options.enable_wal {
-            self.inner.flush_all_memtables()
-        } else {
+        if self.inner.options.enable_wal {
             self.inner.sync()
+        } else {
+            self.inner.flush_all_memtables()
         }
     }
 
@@ -430,7 +430,7 @@ impl LsmStorageInner {
         state.memtable = Arc::new(memtable);
 
         let record = ManifestRecord::NewMemtable(next_sst_id);
-        manifest.add_record_when_init(record)?;
+        manifest.add_record_when_init(&record)?;
 
         next_sst_id += 1;
 
@@ -608,7 +608,7 @@ impl LsmStorageInner {
 
         let record = ManifestRecord::NewMemtable(id);
         if let Some(ref manifest) = self.manifest {
-            manifest.add_record(state_lock_observer, record)?;
+            manifest.add_record(state_lock_observer, &record)?;
         }
 
         Ok(())
@@ -663,7 +663,7 @@ impl LsmStorageInner {
 
                 let record = ManifestRecord::Flush(id);
                 if let Some(ref manifest) = self.manifest {
-                    manifest.add_record(&guard, record)?;
+                    manifest.add_record(&guard, &record)?;
                 }
             }
         } else {

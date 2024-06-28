@@ -1,7 +1,5 @@
-#![allow(dead_code)] // REMOVE THIS LINE after fully implementing this functionality
-
-use std::fs::{File, OpenOptions};
-use std::io::{BufWriter, Read, Write};
+use std::fs::{self, File, OpenOptions};
+use std::io::{BufWriter, Write};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -31,9 +29,7 @@ impl Wal {
 
     pub fn recover(path: impl AsRef<Path>, skiplist: &SkipMap<Bytes, Bytes>) -> Result<Self> {
         let path = path.as_ref();
-        let mut file = OpenOptions::new().read(true).open(path)?;
-        let mut buf = Vec::new();
-        file.read_to_end(&mut buf)?;
+        let buf = fs::read(path)?;
 
         let mut buf = &buf[..];
         while !buf.is_empty() {

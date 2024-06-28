@@ -1,5 +1,6 @@
 #![allow(clippy::unnecessary_wraps)] // TODO(fh): remove clippy allow
 #![allow(clippy::pattern_type_mismatch)] // TODO(fh): remove clippy allow
+#![allow(clippy::str_to_string)]
 
 mod wrapper;
 
