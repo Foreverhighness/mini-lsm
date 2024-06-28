@@ -19,7 +19,7 @@ use self::bloom::Bloom;
 
 const SIZE_BLOOM_FILTER_OFFSET: u64 = std::mem::size_of::<u32>() as u64;
 const SIZE_META_BLOCK_OFFSET: u64 = std::mem::size_of::<u32>() as u64;
-const SIZE_CHECKSUM: usize = std::mem::size_of::<u32>();
+pub(crate) const SIZE_CHECKSUM: usize = std::mem::size_of::<u32>();
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BlockMeta {
