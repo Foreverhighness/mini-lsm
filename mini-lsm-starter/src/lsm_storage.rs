@@ -169,10 +169,56 @@ impl Drop for MiniLsm {
     }
 }
 
+impl LsmStorageInner {
+    fn flush_all_memtables(&self) -> Result<()> {
+        let guard = self.state_lock.lock();
+        let mut guard_arc_state = self.state.write();
+        let old_state = guard_arc_state.as_ref();
+        let mut new_state = old_state.clone();
+
+        for memtable in new_state
+            .imm_memtables
+            .iter()
+            .rev()
+            .chain(Some(&new_state.memtable).filter(|&t| !t.is_empty()))
+        {
+            let sst = self.create_l0_sst_from_memtable(memtable)?;
+            let id = sst.sst_id();
+
+            let record = ManifestRecord::Flush(id);
+            if let Some(ref manifest) = self.manifest {
+                manifest.add_record(&guard, record)?;
+            }
+        }
+        self.sync_dir()?;
+
+        // Is there really need to update state? just for consistency?
+        new_state.memtable = Arc::new(MemTable::create(0));
+        new_state.imm_memtables.clear();
+
+        *guard_arc_state = Arc::new(new_state);
+
+        Ok(())
+    }
+}
+
 impl MiniLsm {
     pub fn close(&self) -> Result<()> {
         self.flush_notifier.send(())?;
         self.compaction_notifier.send(())?;
+
+        if let Some(thread) = self.flush_thread.lock().take() {
+            let ok = thread.join().is_ok();
+            debug_assert!(ok);
+        }
+        if let Some(thread) = self.compaction_thread.lock().take() {
+            let ok = thread.join().is_ok();
+            debug_assert!(ok);
+        }
+
+        if !self.inner.options.enable_wal {
+            self.inner.flush_all_memtables()?;
+        }
 
         Ok(())
     }
@@ -491,6 +537,15 @@ impl LsmStorageInner {
         Ok(())
     }
 
+    fn create_l0_sst_from_memtable(&self, memtable: &MemTable) -> Result<SsTable> {
+        let mut builder = SsTableBuilder::new(self.options.block_size);
+        memtable.flush(&mut builder)?;
+
+        let id = memtable.id();
+        let block_cache = Arc::clone(&self.block_cache);
+        builder.build(id, Some(block_cache), self.path_of_sst(id))
+    }
+
     /// Force flush the earliest-created immutable memtable to disk
     pub fn force_flush_next_imm_memtable(&self) -> Result<()> {
         let snapshot = {
@@ -504,13 +559,11 @@ impl LsmStorageInner {
             let memtable_not_changed =
                 self.state.read().imm_memtables.last().map(|t| t.id()) == Some(memtable.id());
             if memtable_not_changed {
-                let mut builder = SsTableBuilder::new(self.options.block_size);
-                memtable.flush(&mut builder)?;
-                let id = self.next_sst_id();
-                let block_cache = Arc::clone(&self.block_cache);
-                let sst = builder.build(id, Some(block_cache), self.path_of_sst(id))?;
-
+                let sst = self.create_l0_sst_from_memtable(memtable)?;
                 self.sync_dir()?;
+
+                let id = sst.sst_id();
+                debug_assert_eq!(id, memtable.id());
 
                 let mut guard_arc_state = self.state.write();
 
