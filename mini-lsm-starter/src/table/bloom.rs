@@ -7,6 +7,8 @@
 use anyhow::Result;
 use bytes::{BufMut, Bytes, BytesMut};
 
+use crate::table::validate_checksum;
+
 pub const BLOOM_DEFAULT_FPR: f64 = 0.01;
 
 /// Implements a bloom filter
@@ -54,6 +56,8 @@ impl<T: AsMut<[u8]>> BitSliceMut for T {
 impl Bloom {
     /// Decode a bloom filter
     pub fn decode(buf: &[u8]) -> Result<Self> {
+        let buf = validate_checksum(buf)?;
+
         let filter = &buf[..buf.len() - 1];
         let k = buf[buf.len() - 1];
         Ok(Self {
@@ -64,8 +68,13 @@ impl Bloom {
 
     /// Encode a bloom filter
     pub fn encode(&self, buf: &mut Vec<u8>) {
+        let start = buf.len();
+
         buf.extend(&self.filter);
         buf.put_u8(self.k);
+
+        let checksum = crc32fast::hash(&buf[start..]);
+        buf.put_u32(checksum);
     }
 
     /// Get bloom filter bits per key from entries count and FPR
