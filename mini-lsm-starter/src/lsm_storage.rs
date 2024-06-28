@@ -414,7 +414,9 @@ impl LsmStorageInner {
             next_sst_id = sst_ids.iter().chain(mmt_ids.iter()).max().unwrap() + 1;
 
             state.rebuild_sstables_from_sst_ids(sst_ids, path, &block_cache)?;
-            state.rebuild_imm_memtables_from_mmt_ids(mmt_ids, path)?;
+            if options.enable_wal {
+                state.rebuild_imm_memtables_from_mmt_ids(mmt_ids, path)?;
+            }
 
             manifest
         };
