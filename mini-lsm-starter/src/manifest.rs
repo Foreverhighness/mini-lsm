@@ -1,13 +1,14 @@
-use std::io::BufReader;
 use std::path::Path;
 use std::sync::Arc;
 use std::{fs::File, io::Write};
 
 use anyhow::Result;
+use bytes::Buf;
 use parking_lot::{Mutex, MutexGuard};
 use serde::{Deserialize, Serialize};
 
 use crate::compact::CompactionTask;
+use crate::table::{validate_checksum, SIZE_CHECKSUM};
 
 #[derive(Debug)]
 pub struct Manifest {
@@ -34,11 +35,21 @@ impl Manifest {
 
     pub fn recover(path: impl AsRef<Path>) -> Result<(Self, Vec<ManifestRecord>)> {
         let path = path.as_ref();
-        let file = std::fs::OpenOptions::new().read(true).open(path)?;
-        let reader = BufReader::new(file);
-        let records = serde_json::Deserializer::from_reader(reader)
-            .into_iter()
-            .collect::<serde_json::Result<_>>()?;
+        let buf = std::fs::read(path)?;
+
+        let mut records = Vec::new();
+
+        let mut buf = &buf[..];
+        while !buf.is_empty() {
+            let len = buf.get_u64().try_into().unwrap();
+
+            validate_checksum(&buf[..len + SIZE_CHECKSUM])?;
+
+            let record = serde_json::from_slice::<ManifestRecord>(&buf[..len])?;
+            records.push(record);
+
+            buf.advance(len + SIZE_CHECKSUM);
+        }
 
         let file = std::fs::OpenOptions::new().append(true).open(path)?;
         let file = Arc::new(Mutex::new(file));
@@ -58,7 +69,14 @@ impl Manifest {
         let mut file = self.file.lock();
         let json = serde_json::to_vec(record)?;
 
+        let len: u64 = json.len().try_into().unwrap();
+        file.write_all(&len.to_be_bytes())?;
+
         file.write_all(&json)?;
+
+        let checksum = crc32fast::hash(&json);
+        file.write_all(&checksum.to_be_bytes())?;
+
         file.sync_all()?;
 
         Ok(())
