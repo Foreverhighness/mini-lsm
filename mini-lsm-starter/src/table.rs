@@ -225,40 +225,27 @@ impl SsTable {
 
     /// Read a block from the disk.
     pub fn read_block(&self, block_idx: usize) -> Result<Arc<Block>> {
-        let data = {
-            let meta = &self.block_meta[block_idx];
-            let offset = meta.offset;
+        let meta = &self.block_meta[block_idx];
+        let offset = meta.offset;
 
-            let next_offset = self
-                .block_meta
-                .get(block_idx + 1)
-                .map(|meta| meta.offset)
-                .unwrap_or(self.block_meta_offset);
-            let len = next_offset - offset;
+        let next_offset = self
+            .block_meta
+            .get(block_idx + 1)
+            .map(|meta| meta.offset)
+            .unwrap_or(self.block_meta_offset);
+        let len = next_offset - offset;
 
-            let data = {
-                let offset = offset.try_into().unwrap();
-                let len = len.try_into().unwrap();
-                self.file.read(offset, len)?
-            };
-
-            debug_assert!(data.len() == len);
-
-            debug_assert!(len > SIZE_CHECKSUM);
-            let mut block_sum = &data[len - SIZE_CHECKSUM..];
-            let block_sum = block_sum.get_u32();
-            let checksum = crc32fast::hash(&data[..len - SIZE_CHECKSUM]);
-
-            if block_sum != checksum {
-                return Err(anyhow!("Checksum validation failed"));
-            }
-
-            let mut data = data;
-            data.truncate(len - SIZE_CHECKSUM);
-
-            data
+        let buf = {
+            let offset = offset.try_into().unwrap();
+            let len = len.try_into().unwrap();
+            self.file.read(offset, len)?
         };
-        let block = Block::decode(&data[..]);
+
+        debug_assert!(buf.len() == len);
+
+        let data = validate_checksum(&buf)?;
+
+        let block = Block::decode(data);
 
         Ok(Arc::new(block))
     }
