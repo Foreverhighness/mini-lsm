@@ -2,7 +2,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::Result;
-use bytes::{BufMut, Bytes};
+use bytes::BufMut;
 
 use super::{
     bloom::{Bloom, BLOOM_DEFAULT_FPR},
@@ -10,15 +10,15 @@ use super::{
 };
 use crate::{
     block::BlockBuilder,
-    key::{KeyBytes, KeySlice},
+    key::{KeyBytes, KeySlice, KeyVec},
     lsm_storage::BlockCache,
 };
 
 /// Builds an SSTable from key-value pairs.
 pub struct SsTableBuilder {
     builder: BlockBuilder,
-    first_key: Vec<u8>,
-    last_key: Vec<u8>,
+    first_key: KeyVec,
+    last_key: KeyVec,
     data: Vec<u8>,
     pub(crate) meta: Vec<BlockMeta>,
     block_size: usize,
@@ -30,8 +30,8 @@ impl SsTableBuilder {
     pub fn new(block_size: usize) -> Self {
         SsTableBuilder {
             builder: BlockBuilder::new(block_size),
-            first_key: Vec::new(),
-            last_key: Vec::new(),
+            first_key: KeyVec::new(),
+            last_key: KeyVec::new(),
             data: Vec::new(),
             meta: Vec::new(),
             block_size,
@@ -45,15 +45,15 @@ impl SsTableBuilder {
     /// be helpful here)
     pub fn add(&mut self, key: KeySlice, value: &[u8]) {
         if self.first_key.is_empty() {
-            key.raw_ref().clone_into(&mut self.first_key);
+            self.first_key.set_from_slice(key);
         }
 
-        let hash = farmhash::fingerprint32(key.raw_ref());
+        let hash = farmhash::fingerprint32(key.key_ref());
         self.key_hashes.push(hash);
 
         let not_full = self.builder.add(key, value);
         if not_full {
-            key.raw_ref().clone_into(&mut self.last_key);
+            self.last_key.set_from_slice(key);
             return;
         }
 
@@ -63,8 +63,8 @@ impl SsTableBuilder {
         let success = self.builder.add(key, value);
         debug_assert!(success);
 
-        key.raw_ref().clone_into(&mut self.first_key);
-        key.raw_ref().clone_into(&mut self.last_key);
+        self.first_key.set_from_slice(key);
+        self.last_key.set_from_slice(key);
     }
 
     fn flush_block(&mut self) {
@@ -76,8 +76,8 @@ impl SsTableBuilder {
 
         let meta = {
             let offset = self.data.len();
-            let first_key = KeyBytes::from_bytes(Bytes::copy_from_slice(&self.first_key));
-            let last_key = KeyBytes::from_bytes(Bytes::copy_from_slice(&self.last_key));
+            let first_key = std::mem::take(&mut self.first_key).into_key_bytes();
+            let last_key = std::mem::take(&mut self.last_key).into_key_bytes();
             BlockMeta {
                 offset,
                 first_key,
