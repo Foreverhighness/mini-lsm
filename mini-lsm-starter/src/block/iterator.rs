@@ -102,6 +102,7 @@ impl BlockIterator {
     /// Get key value from offset
     fn get_key_value_range_by_offset(&self, offset: usize) -> (KeyVec, (usize, usize)) {
         let mut data: &[u8] = &self.block.data[offset..];
+        debug_assert!(!data.is_empty());
         let remainder = data.remaining();
 
         let key = KeyVec::decode_from_overlap(&mut data, self.first_key.key_ref());
@@ -111,5 +112,46 @@ impl BlockIterator {
         let bytes_passed = remainder - data.remaining();
         let value_start = offset + bytes_passed;
         (key, (value_start, value_start + value_len))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::block::BlockBuilder;
+
+    use super::*;
+
+    #[test]
+    fn test_iter() {
+        let mut builder = BlockBuilder::new(1024);
+        let ok = builder.add(KeySlice::from_slice(b"123", 0), b"666");
+        assert!(ok);
+        let ok = builder.add(KeySlice::from_slice(b"124", 0), b"111");
+        assert!(ok);
+        let ok = builder.add(KeySlice::from_slice(b"111", 0), b"7");
+        assert!(ok);
+
+        let block = builder.build();
+
+        let mut iter = BlockIterator::create_and_seek_to_first(Arc::new(block));
+        assert!(iter.is_valid());
+        assert_eq!(
+            (iter.key().key_ref(), iter.value()),
+            (&b"123"[..], &b"666"[..])
+        );
+        iter.next();
+        assert!(iter.is_valid());
+        assert_eq!(
+            (iter.key().key_ref(), iter.value()),
+            (&b"124"[..], &b"111"[..])
+        );
+        iter.next();
+        assert!(iter.is_valid());
+        assert_eq!(
+            (iter.key().key_ref(), iter.value()),
+            (&b"111"[..], &b"7"[..])
+        );
+        iter.next();
+        assert!(!iter.is_valid());
     }
 }
