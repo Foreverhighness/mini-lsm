@@ -37,8 +37,7 @@ impl Wal {
         while !buf.is_empty() {
             let start = buf;
 
-            let key_len = buf.get_u16().into();
-            let key = UserKey::recover_from_wal(&mut buf, key_len);
+            let key = UserKey::decode_from_raw(&mut buf);
 
             let value_len = buf.get_u16() as usize;
             let value = Bytes::copy_from_slice(&buf[..value_len]);
@@ -63,7 +62,7 @@ impl Wal {
         let mut buf = Vec::with_capacity(len);
 
         // put key
-        key.put_into_wal(&mut buf);
+        key.encode_raw(&mut buf);
 
         let value_len = value.len().try_into().unwrap();
         buf.put_u16(value_len);

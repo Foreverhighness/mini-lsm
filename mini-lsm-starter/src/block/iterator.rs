@@ -2,10 +2,7 @@ use std::sync::Arc;
 
 use bytes::Buf;
 
-use crate::{
-    block::{SIZE_KEY_LEN, SIZE_VALUE_LEN},
-    key::{KeySlice, KeyVec},
-};
+use crate::key::{KeySlice, KeyVec};
 
 use super::Block;
 
@@ -105,19 +102,14 @@ impl BlockIterator {
     /// Get key value from offset
     fn get_key_value_range_by_offset(&self, offset: usize) -> (KeyVec, (usize, usize)) {
         let mut data: &[u8] = &self.block.data[offset..];
-        let overlap_len: usize = data.get_u16().into();
-        let rest_key_len: usize = data.get_u16().into();
-        let mut key = Vec::with_capacity(overlap_len + rest_key_len);
+        let remainder = data.remaining();
 
-        key.extend_from_slice(&self.first_key.key_ref()[..overlap_len]);
-        key.extend_from_slice(&data[..rest_key_len]);
-        data.advance(rest_key_len);
-
-        let ts = data.get_u64();
-        let key = KeyVec::from_vec_with_ts(key, ts);
+        let key = KeyVec::decode_from_overlap(&mut data, self.first_key.key_ref());
 
         let value_len: usize = data.get_u16().into();
-        let value_start = offset + SIZE_KEY_LEN + rest_key_len + SIZE_VALUE_LEN;
+
+        let bytes_passed = remainder - data.remaining();
+        let value_start = offset + bytes_passed;
         (key, (value_start, value_start + value_len))
     }
 }

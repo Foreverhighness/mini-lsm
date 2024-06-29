@@ -69,10 +69,9 @@ impl StorageIterator for LsmIterator {
         self.inner.next()?;
 
         while self.is_valid() {
-            let value_from_future = self.inner.key().ts() > self.read_ts;
             let tombstone = self.value().is_empty();
 
-            if !value_from_future && !tombstone {
+            if !tombstone {
                 break;
             }
             self.inner.next()?;
