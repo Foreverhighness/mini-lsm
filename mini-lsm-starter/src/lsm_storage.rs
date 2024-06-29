@@ -540,11 +540,11 @@ impl LsmStorageInner {
             match *record {
                 WriteBatchRecord::Put(ref key, ref value) => {
                     let key = UserKeyRef::from_slice(key.as_ref(), TS_DEFAULT);
-                    memtable.put(key, value.as_ref())?
+                    memtable.put(key, value.as_ref())?;
                 }
                 WriteBatchRecord::Del(ref key) => {
                     let key = UserKeyRef::from_slice(key.as_ref(), TS_DEFAULT);
-                    memtable.put(key, &[])?
+                    memtable.put(key, &[])?;
                 }
             }
         }
@@ -788,7 +788,7 @@ impl LsmStorageInner {
         let memtable_l0_iter = TwoMergeIterator::create(memtable_iter, l0_iter)?;
 
         let iter = TwoMergeIterator::create(memtable_l0_iter, level_iter)?;
-        let upper = upper.map(|key| key.key_ref());
+        let upper = upper.map(UserKeyRef::key_ref);
         let lsm_iter = LsmIterator::new(iter, upper, TS_DEFAULT)?;
         Ok(FusedIterator::new(lsm_iter))
     }

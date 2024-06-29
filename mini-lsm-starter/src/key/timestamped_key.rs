@@ -8,6 +8,7 @@ pub const TS_ENABLED: bool = true;
 
 pub type TimeStamp = u64;
 
+#[derive(Clone, Copy)]
 pub struct TimeStampedKey<T: AsRef<[u8]>>(T, TimeStamp);
 
 pub type Key<T> = TimeStampedKey<T>;
@@ -57,12 +58,12 @@ impl Key<Vec<u8>> {
 
     /// Clears the key and set ts to 0.
     pub fn clear(&mut self) {
-        self.0.clear()
+        self.0.clear();
     }
 
     /// Append a slice to the end of the key
     pub fn append(&mut self, data: &[u8]) {
-        self.0.extend(data)
+        self.0.extend(data);
     }
 
     pub fn set_ts(&mut self, ts: TimeStamp) {
@@ -229,14 +230,6 @@ impl<T: AsRef<[u8]> + PartialEq> PartialEq for Key<T> {
 }
 
 impl<T: AsRef<[u8]> + Eq> Eq for Key<T> {}
-
-impl<T: AsRef<[u8]> + Clone> Clone for Key<T> {
-    fn clone(&self) -> Self {
-        Self(self.0.clone(), self.1)
-    }
-}
-
-impl<T: AsRef<[u8]> + Copy> Copy for Key<T> {}
 
 impl<T: AsRef<[u8]> + PartialOrd> PartialOrd for Key<T> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {

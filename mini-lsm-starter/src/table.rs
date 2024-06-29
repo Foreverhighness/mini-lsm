@@ -40,10 +40,10 @@ pub fn validate_checksum(mut buf: &[u8]) -> Result<&[u8]> {
 
     buf = &buf[..len - SIZE_CHECKSUM];
     let checksum = crc32fast::hash(buf);
-    if sum_in_buf != checksum {
-        Err(anyhow!("Checksum validation failed"))
-    } else {
+    if sum_in_buf == checksum {
         Ok(buf)
+    } else {
+        Err(anyhow!("Checksum validation failed"))
     }
 }
 
@@ -90,7 +90,7 @@ impl BlockMeta {
             let ts = buf.get_u64();
             let first_key = KeyBytes::from_bytes_with_ts(bytes, ts);
 
-            let last_key_len = buf.get_u16().try_into().unwrap();
+            let last_key_len = buf.get_u16().into();
             let bytes = buf.copy_to_bytes(last_key_len);
             let ts = buf.get_u64();
             let last_key = KeyBytes::from_bytes_with_ts(bytes, ts);
