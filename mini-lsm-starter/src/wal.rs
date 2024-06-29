@@ -5,9 +5,9 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use bytes::{Buf, BufMut, Bytes};
-use crossbeam_skiplist::SkipMap;
 use parking_lot::Mutex;
 
+use crate::mem_table::{KvStore, UserKey, UserKeyRef};
 use crate::table::{validate_checksum, SIZE_CHECKSUM};
 
 const SIZE_KEY_LEN: usize = std::mem::size_of::<u16>();
@@ -29,7 +29,7 @@ impl Wal {
         Ok(Wal { file })
     }
 
-    pub fn recover(path: impl AsRef<Path>, skiplist: &SkipMap<Bytes, Bytes>) -> Result<Self> {
+    pub fn recover(path: impl AsRef<Path>, kv_store: &KvStore) -> Result<Self> {
         let path = path.as_ref();
         let buf = fs::read(path)?;
 
@@ -37,9 +37,8 @@ impl Wal {
         while !buf.is_empty() {
             let start = buf;
 
-            let key_len = buf.get_u16() as usize;
-            let key = Bytes::copy_from_slice(&buf[..key_len]);
-            buf.advance(key_len);
+            let key_len = buf.get_u16().into();
+            let key = UserKey::recover_from_wal(&mut buf, key_len);
 
             let value_len = buf.get_u16() as usize;
             let value = Bytes::copy_from_slice(&buf[..value_len]);
@@ -47,11 +46,11 @@ impl Wal {
 
             buf.advance(SIZE_CHECKSUM);
 
-            let len = SIZE_KEY_LEN + key_len + SIZE_VALUE_LEN + value_len + SIZE_CHECKSUM;
+            let len = SIZE_KEY_LEN + key.raw_len() + SIZE_VALUE_LEN + value_len + SIZE_CHECKSUM;
             validate_checksum(&start[..len])?;
 
             debug_assert!(!key.is_empty());
-            skiplist.insert(key, value);
+            kv_store.insert(key, value);
         }
 
         let file = OpenOptions::new().append(true).open(path)?;
@@ -59,20 +58,21 @@ impl Wal {
         Ok(Wal { file })
     }
 
-    pub fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
-        let len = SIZE_KEY_LEN + key.len() + SIZE_VALUE_LEN + value.len() + SIZE_CHECKSUM;
+    pub fn put(&self, key: UserKeyRef, value: &[u8]) -> Result<()> {
+        let len = SIZE_KEY_LEN + key.raw_len() + SIZE_VALUE_LEN + value.len() + SIZE_CHECKSUM;
         let mut buf = Vec::with_capacity(len);
 
-        let key_len = key.len().try_into().unwrap();
-        let value_len = value.len().try_into().unwrap();
+        // put key
+        key.put_into_wal(&mut buf);
 
-        buf.put_u16(key_len);
-        buf.put_slice(key);
+        let value_len = value.len().try_into().unwrap();
         buf.put_u16(value_len);
         buf.put_slice(value);
 
         let checksum = crc32fast::hash(&buf);
         buf.put_u32(checksum);
+
+        debug_assert_eq!(buf.len(), len);
 
         let mut file = self.file.lock();
         file.write_all(&buf)?;
