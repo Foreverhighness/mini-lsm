@@ -109,11 +109,12 @@ impl BlockIterator {
         let rest_key_len: usize = data.get_u16().into();
         let mut key = Vec::with_capacity(overlap_len + rest_key_len);
 
-        key.extend_from_slice(&self.first_key.raw_ref()[..overlap_len]);
+        key.extend_from_slice(&self.first_key.key_ref()[..overlap_len]);
         key.extend_from_slice(&data[..rest_key_len]);
         data.advance(rest_key_len);
 
-        let key = KeyVec::from_vec(key);
+        let ts = data.get_u64();
+        let key = KeyVec::from_vec_with_ts(key, ts);
 
         let value_len: usize = data.get_u16().into();
         let value_start = offset + SIZE_KEY_LEN + rest_key_len + SIZE_VALUE_LEN;

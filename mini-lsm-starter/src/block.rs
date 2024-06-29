@@ -10,7 +10,8 @@ const SIZE_OF_DATA_ELEMENT: usize = std::mem::size_of::<u8>();
 const SIZE_OF_OFFSET_ELEMENT: usize = std::mem::size_of::<u16>();
 const SIZE_KEY_OVERLAP_LEN: usize = std::mem::size_of::<u16>();
 const SIZE_REST_KEY_LEN: usize = std::mem::size_of::<u16>();
-const SIZE_KEY_LEN: usize = SIZE_KEY_OVERLAP_LEN + SIZE_REST_KEY_LEN;
+const SIZE_TIMESTAMP: usize = std::mem::size_of::<u64>();
+const SIZE_KEY_LEN: usize = SIZE_KEY_OVERLAP_LEN + SIZE_REST_KEY_LEN + SIZE_TIMESTAMP;
 const SIZE_VALUE_LEN: usize = std::mem::size_of::<u16>();
 
 /// A block is the smallest unit of read and caching in LSM tree. It is a collection of sorted key-value pairs.
@@ -59,7 +60,7 @@ impl Block {
                 .map(|_| bytes_offsets.get_u16())
                 .collect()
         };
-        let data = data[..data_len].to_owned();
+        let data = data[..data_len].to_vec();
 
         Block { data, offsets }
     }
