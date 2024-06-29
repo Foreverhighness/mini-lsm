@@ -8,6 +8,7 @@ use crate::{
         concat_iterator::SstConcatIterator, merge_iterator::MergeIterator,
         two_merge_iterator::TwoMergeIterator, StorageIterator,
     },
+    key::TimeStamp,
     mem_table::{map_bound, MemTableIterator},
     table::SsTableIterator,
 };
@@ -21,15 +22,24 @@ type LsmIteratorInner = TwoMergeIterator<
 pub struct LsmIterator {
     inner: LsmIteratorInner,
     upper: Bound<Bytes>,
+    read_ts: TimeStamp,
 }
 
 impl LsmIterator {
-    pub(crate) fn new(mut iter: LsmIteratorInner, upper: Bound<&[u8]>) -> Result<Self> {
+    pub(crate) fn new(
+        mut iter: LsmIteratorInner,
+        upper: Bound<&[u8]>,
+        read_ts: TimeStamp,
+    ) -> Result<Self> {
         let upper = map_bound(upper);
         while iter.is_valid() && iter.value().is_empty() {
             iter.next()?;
         }
-        Ok(Self { inner: iter, upper })
+        Ok(Self {
+            inner: iter,
+            upper,
+            read_ts,
+        })
     }
 }
 
@@ -58,7 +68,13 @@ impl StorageIterator for LsmIterator {
 
         self.inner.next()?;
 
-        while self.is_valid() && self.value().is_empty() {
+        while self.is_valid() {
+            let value_from_future = self.inner.key().ts() > self.read_ts;
+            let tombstone = self.value().is_empty();
+
+            if !value_from_future && !tombstone {
+                break;
+            }
             self.inner.next()?;
         }
         Ok(())
