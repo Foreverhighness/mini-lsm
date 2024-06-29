@@ -175,7 +175,7 @@ impl MemTable {
 
         for entry in self.map.iter() {
             let key = entry.key();
-            let key = UserKeyRef::from_slice(key.key_ref(), key.ts());
+            let key = UserKeyRef::from_slice(key.key_ref(), TS_DEFAULT);
             let value = entry.value();
             builder.add(key, value);
         }

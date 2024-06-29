@@ -1,19 +1,21 @@
 #![allow(dead_code)]
 #![allow(clippy::unused_self)]
 
-use std::fmt::Debug;
+use std::{fmt::Debug, marker::PhantomData};
 
-use bytes::Bytes;
+use bytes::{Buf, BufMut, Bytes};
 
-pub(super) const TS_ENABLED: bool = false;
+use super::TimeStamp;
+
+pub const TS_ENABLED: bool = false;
 
 #[derive(Clone, Copy)]
 pub struct RawKey<T: AsRef<[u8]>>(T);
 
-pub(super) type Key<T> = RawKey<T>;
-pub(super) type KeySlice<'a> = RawKey<&'a [u8]>;
-pub(super) type KeyVec = RawKey<Vec<u8>>;
-pub(super) type KeyBytes = RawKey<Bytes>;
+pub type Key<T> = RawKey<T>;
+pub type KeySlice<'a> = RawKey<&'a [u8]>;
+pub type KeyVec = RawKey<Vec<u8>>;
+pub type KeyBytes = RawKey<Bytes>;
 
 impl<T: AsRef<[u8]>> Key<T> {
     pub fn into_inner(self) -> T {
@@ -24,12 +26,45 @@ impl<T: AsRef<[u8]>> Key<T> {
         self.0.as_ref().len()
     }
 
+    pub fn key_len(&self) -> usize {
+        self.len()
+    }
+
+    pub fn raw_len(&self) -> usize {
+        self.len()
+    }
+
     pub fn is_empty(&self) -> bool {
         self.0.as_ref().is_empty()
     }
 
     pub fn for_testing_ts(self) -> u64 {
         0
+    }
+
+    /// encode key without consider overlap
+    pub fn encode_raw(&self, buf: &mut Vec<u8>) {
+        let key = self.0.as_ref();
+        let key_len = key.len().try_into().unwrap();
+        buf.put_u16(key_len);
+        buf.put_slice(key);
+    }
+
+    /// encode key with consider overlap
+    pub fn encode_overlap(&self, buf: &mut Vec<u8>, first_key: &[u8]) {
+        let key = self.0.as_ref();
+        let key_overlap_len = key
+            .as_ref()
+            .iter()
+            .zip(first_key.iter())
+            .take_while(|&(&a, &b)| a == b)
+            .count();
+
+        // encode key
+        let rest_key_len = key.len() - key_overlap_len;
+        buf.put_u16(key_overlap_len.try_into().unwrap());
+        buf.put_u16(rest_key_len.try_into().unwrap());
+        buf.put_slice(&key[key_overlap_len..]);
     }
 }
 
@@ -72,6 +107,23 @@ impl Key<Vec<u8>> {
         self.0.as_ref()
     }
 
+    pub fn key_ref(&self) -> &[u8] {
+        self.raw_ref()
+    }
+
+    /// decode from buffer, consider overlap
+    pub fn decode_from_overlap(buf: &mut &[u8], first_key: &[u8]) -> Self {
+        let overlap_len: usize = buf.get_u16().into();
+        let rest_key_len: usize = buf.get_u16().into();
+        let mut key = Vec::with_capacity(overlap_len + rest_key_len);
+
+        key.extend_from_slice(&first_key[..overlap_len]);
+        key.extend_from_slice(&buf[..rest_key_len]);
+        buf.advance(rest_key_len);
+
+        Self(key)
+    }
+
     pub fn for_testing_key_ref(&self) -> &[u8] {
         self.0.as_ref()
     }
@@ -96,6 +148,23 @@ impl Key<Bytes> {
         self.0.as_ref()
     }
 
+    pub fn key_ref(&self) -> &[u8] {
+        self.raw_ref()
+    }
+
+    pub fn copy_from_slice(slice: KeySlice) -> Self {
+        RawKey(Bytes::copy_from_slice(slice.raw_ref()))
+    }
+
+    /// decode from buffer, do not consider overlap
+    pub fn decode_from_raw(buf: &mut &[u8]) -> Self {
+        let key_len = buf.get_u16().into();
+        let key = Bytes::copy_from_slice(&buf[..key_len]);
+        buf.advance(key_len);
+
+        RawKey(key)
+    }
+
     pub fn for_testing_from_bytes_no_ts(bytes: Bytes) -> KeyBytes {
         RawKey(bytes)
     }
@@ -111,13 +180,17 @@ impl<'a> Key<&'a [u8]> {
     }
 
     /// Create a key slice from a slice. Will be removed in week 3.
-    pub fn from_slice(slice: &'a [u8]) -> Self {
+    pub fn from_slice(slice: &'a [u8], _: TimeStamp) -> Self {
         Self(slice)
     }
 
     /// Always use `raw_ref` to access the key in week 1 + 2. This function will be removed in week 3.
     pub fn raw_ref(self) -> &'a [u8] {
         self.0
+    }
+
+    pub fn key_ref(self) -> &'a [u8] {
+        self.raw_ref()
     }
 
     pub fn for_testing_key_ref(self) -> &'a [u8] {
@@ -130,6 +203,31 @@ impl<'a> Key<&'a [u8]> {
 
     pub fn for_testing_from_slice_with_ts(slice: &'a [u8], _ts: u64) -> Self {
         Self(slice)
+    }
+}
+
+pub struct KeyBytesGuard<'a>(KeyBytes, PhantomData<&'a [u8]>);
+impl AsRef<KeyBytes> for KeyBytesGuard<'_> {
+    fn as_ref(&self) -> &KeyBytes {
+        &self.0
+    }
+}
+impl<'a> KeySlice<'a> {
+    /// # Examples
+    ///
+    /// ```
+    /// let key_bytes = KeyBytes::new();
+    /// let guard = {
+    ///     let key_slice = key_bytes.as_key_slice();
+    ///     key_slice.as_key_bytes()
+    /// };
+    /// ```
+    pub fn as_key_bytes(self) -> KeyBytesGuard<'a> {
+        // This is safe because the guard lifetime no longer than self
+        let bytes = unsafe { std::mem::transmute::<&'_ [u8], &'static [u8]>(self.0) };
+        let bytes = Bytes::from_static(bytes);
+
+        KeyBytesGuard(KeyBytes::from_bytes(bytes), PhantomData)
     }
 }
 
