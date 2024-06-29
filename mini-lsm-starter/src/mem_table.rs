@@ -12,16 +12,21 @@ use crossbeam_skiplist::SkipMap;
 use ouroboros::self_referencing;
 
 use crate::iterators::StorageIterator;
-use crate::key::KeySlice;
+use crate::key::{KeyBytes, KeySlice, TS_DEFAULT};
 use crate::table::SsTableBuilder;
 use crate::wal::Wal;
+
+pub(crate) type UserKey = KeyBytes;
+pub(crate) type UserKeyRef<'a> = KeySlice<'a>;
+pub(crate) type UserValue = Bytes;
+pub(crate) type KvStore = SkipMap<UserKey, UserValue>;
 
 /// A basic mem-table based on crossbeam-skiplist.
 ///
 /// An initial implementation of memtable is part of week 1, day 1. It will be incrementally implemented in other
 /// chapters of week 1 and week 2.
 pub struct MemTable {
-    map: Arc<SkipMap<Bytes, Bytes>>,
+    map: Arc<KvStore>,
     wal: Option<Wal>,
     id: usize,
     approximate_size: Arc<AtomicUsize>,
@@ -44,11 +49,20 @@ pub(crate) fn map_bound(bound: Bound<&[u8]>) -> Bound<Bytes> {
     }
 }
 
+/// Create a bound of `UserKey` from a bound of `UserKeyRef`.
+pub(crate) fn map_key_bound(bound: Bound<UserKeyRef>) -> Bound<UserKey> {
+    match bound {
+        Bound::Included(x) => Bound::Included(UserKey::copy_from_slice(x)),
+        Bound::Excluded(x) => Bound::Excluded(UserKey::copy_from_slice(x)),
+        Bound::Unbounded => Bound::Unbounded,
+    }
+}
+
 impl MemTable {
     /// Create a new mem-table.
     pub fn create(id: usize) -> Self {
         Self {
-            map: Arc::new(SkipMap::new()),
+            map: Arc::new(KvStore::new()),
             wal: None,
             id,
             approximate_size: Arc::new(AtomicUsize::default()),
@@ -69,11 +83,11 @@ impl MemTable {
 
     /// Create a memtable from WAL
     pub fn recover_from_wal(id: usize, path: impl AsRef<Path>) -> Result<Self> {
-        let skiplist = SkipMap::new();
-        let wal = Wal::recover(path, &skiplist)?;
+        let kv_store = KvStore::new();
+        let wal = Wal::recover(path, &kv_store)?;
 
         Ok(Self {
-            map: Arc::new(skiplist),
+            map: Arc::new(kv_store),
             wal: Some(wal),
             id,
             approximate_size: Arc::default(),
@@ -81,11 +95,11 @@ impl MemTable {
     }
 
     pub fn for_testing_put_slice(&self, key: &[u8], value: &[u8]) -> Result<()> {
-        self.put(key, value)
+        self.put(UserKeyRef::from_slice(key, TS_DEFAULT), value)
     }
 
     pub fn for_testing_get_slice(&self, key: &[u8]) -> Option<Bytes> {
-        self.get(key)
+        self.get(UserKeyRef::from_slice(key, TS_DEFAULT))
     }
 
     pub fn for_testing_scan_slice(
@@ -93,20 +107,23 @@ impl MemTable {
         lower: Bound<&[u8]>,
         upper: Bound<&[u8]>,
     ) -> MemTableIterator {
-        self.scan(lower, upper)
+        let map = |b| UserKeyRef::from_slice(b, TS_DEFAULT);
+        self.scan(lower.map(map), upper.map(map))
     }
 
     /// Get a value by key.
-    pub fn get(&self, key: &[u8]) -> Option<Bytes> {
-        self.map.get(key).map(|v| Bytes::clone(v.value()))
+    pub fn get(&self, key: UserKeyRef) -> Option<Bytes> {
+        self.map
+            .get(key.as_key_bytes().as_ref())
+            .map(|v| Bytes::clone(v.value()))
     }
 
     /// Put a key-value pair into the mem-table.
     ///
     /// In week 1, day 1, simply put the key-value pair into the skipmap.
     /// In week 2, day 6, also flush the data to WAL.
-    pub fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
-        let size_delta = key.len() + value.len();
+    pub fn put(&self, key: UserKeyRef, value: &[u8]) -> Result<()> {
+        let size_delta = key.raw_len() + value.len();
         self.approximate_size
             .fetch_add(size_delta, std::sync::atomic::Ordering::Relaxed);
 
@@ -115,7 +132,7 @@ impl MemTable {
         }
 
         self.map
-            .insert(Bytes::copy_from_slice(key), Bytes::copy_from_slice(value));
+            .insert(UserKey::copy_from_slice(key), Bytes::copy_from_slice(value));
         Ok(())
     }
 
@@ -127,10 +144,10 @@ impl MemTable {
     }
 
     /// Get an iterator over a range of keys.
-    pub fn scan(&self, lower: Bound<&[u8]>, upper: Bound<&[u8]>) -> MemTableIterator {
+    pub fn scan(&self, lower: Bound<UserKeyRef>, upper: Bound<UserKeyRef>) -> MemTableIterator {
         let mut iter = MemTableIteratorBuilder {
             map: Arc::clone(&self.map),
-            iter_builder: |map| map.range((map_bound(lower), map_bound(upper))),
+            iter_builder: |map| map.range((map_key_bound(lower), map_key_bound(upper))),
             item: Default::default(),
         }
         .build();
@@ -157,7 +174,8 @@ impl MemTable {
         );
 
         for entry in self.map.iter() {
-            let key = KeySlice::from_slice(entry.key());
+            let key = entry.key();
+            let key = UserKeyRef::from_slice(key.key_ref(), key.ts());
             let value = entry.value();
             builder.add(key, value);
         }
@@ -180,8 +198,13 @@ impl MemTable {
     }
 }
 
-type SkipMapRangeIter<'a> =
-    crossbeam_skiplist::map::Range<'a, Bytes, (Bound<Bytes>, Bound<Bytes>), Bytes, Bytes>;
+type SkipMapRangeIter<'a> = crossbeam_skiplist::map::Range<
+    'a,
+    UserKey,
+    (Bound<UserKey>, Bound<UserKey>),
+    UserKey,
+    UserValue,
+>;
 
 /// An iterator over a range of `SkipMap`. This is a self-referential structure and please refer to week 1, day 2
 /// chapter for more information.
@@ -190,26 +213,26 @@ type SkipMapRangeIter<'a> =
 #[self_referencing]
 pub struct MemTableIterator {
     /// Stores a reference to the skipmap.
-    map: Arc<SkipMap<Bytes, Bytes>>,
+    map: Arc<SkipMap<UserKey, UserValue>>,
     /// Stores a skipmap iterator that refers to the lifetime of `MemTableIterator` itself.
     #[borrows(map)]
     #[not_covariant]
     iter: SkipMapRangeIter<'this>,
     /// Stores the current key-value pair.
-    item: (Bytes, Bytes),
+    item: (UserKey, UserValue),
 }
 
 impl StorageIterator for MemTableIterator {
-    type KeyType<'a> = KeySlice<'a>;
+    type KeyType<'a> = UserKeyRef<'a>;
 
     fn value(&self) -> &[u8] {
         let value = &self.borrow_item().1;
         value
     }
 
-    fn key(&self) -> KeySlice {
+    fn key(&self) -> UserKeyRef {
         let key = &self.borrow_item().0;
-        KeySlice::from_slice(key)
+        key.as_key_slice()
     }
 
     fn is_valid(&self) -> bool {
@@ -222,7 +245,7 @@ impl StorageIterator for MemTableIterator {
             *this.item = this
                 .iter
                 .next()
-                .map(|entry| (Bytes::clone(entry.key()), Bytes::clone(entry.value())))
+                .map(|entry| (entry.key().clone(), Bytes::clone(entry.value())))
                 .unwrap_or_default();
         });
 
