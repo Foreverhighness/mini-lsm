@@ -42,12 +42,12 @@ impl BlockBuilder {
         debug_assert!(!key.is_empty());
 
         let key_overlap_len = key
-            .raw_ref()
+            .key_ref()
             .iter()
-            .zip(self.first_key.raw_ref().iter())
+            .zip(self.first_key.key_ref().iter())
             .take_while(|&(&a, &b)| a == b)
             .count();
-        let rest_key_len = key.len() - key_overlap_len;
+        let rest_key_len = key.key_len() - key_overlap_len;
         let value_len: u16 = value.len().try_into().unwrap();
         let offset: u16 = self.offset.try_into().unwrap();
 
@@ -62,9 +62,13 @@ impl BlockBuilder {
             self.first_key = key.to_key_vec();
         }
 
+        // encode key
         self.data.put_u16(key_overlap_len.try_into().unwrap());
         self.data.put_u16(rest_key_len.try_into().unwrap());
-        self.data.put_slice(&key.raw_ref()[key_overlap_len..]);
+        self.data.put_slice(&key.key_ref()[key_overlap_len..]);
+        self.data.put_u64(key.ts());
+
+        // encode value
         self.data.put_u16(value_len);
         self.data.put_slice(value);
 
