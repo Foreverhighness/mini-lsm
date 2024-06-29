@@ -50,6 +50,22 @@ impl<T: AsRef<[u8]>> Key<T> {
         buf.put_slice(key);
     }
 
+    /// calculate occupied size when consider overlap
+    pub fn occupy_size_overlap(&self, first_key: &[u8]) -> usize {
+        const SIZE_KEY_OVERLAP_LEN: usize = std::mem::size_of::<u16>();
+        const SIZE_REST_KEY_LEN: usize = std::mem::size_of::<u16>();
+
+        let key = self.0.as_ref();
+        let key_overlap_len = key
+            .as_ref()
+            .iter()
+            .zip(first_key.iter())
+            .take_while(|&(&a, &b)| a == b)
+            .count();
+
+        SIZE_KEY_OVERLAP_LEN + SIZE_REST_KEY_LEN + key.len() - key_overlap_len
+    }
+
     /// encode key with consider overlap
     pub fn encode_overlap(&self, buf: &mut Vec<u8>, first_key: &[u8]) {
         let key = self.0.as_ref();
@@ -59,9 +75,9 @@ impl<T: AsRef<[u8]>> Key<T> {
             .zip(first_key.iter())
             .take_while(|&(&a, &b)| a == b)
             .count();
+        let rest_key_len = key.len() - key_overlap_len;
 
         // encode key
-        let rest_key_len = key.len() - key_overlap_len;
         buf.put_u16(key_overlap_len.try_into().unwrap());
         buf.put_u16(rest_key_len.try_into().unwrap());
         buf.put_slice(&key[key_overlap_len..]);

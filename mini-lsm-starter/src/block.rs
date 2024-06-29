@@ -8,14 +8,10 @@ pub use iterator::BlockIterator;
 const SIZE_NUM_OF_ELEMENT: usize = std::mem::size_of::<u16>();
 const SIZE_OF_DATA_ELEMENT: usize = std::mem::size_of::<u8>();
 const SIZE_OF_OFFSET_ELEMENT: usize = std::mem::size_of::<u16>();
-const SIZE_KEY_OVERLAP_LEN: usize = std::mem::size_of::<u16>();
-const SIZE_REST_KEY_LEN: usize = std::mem::size_of::<u16>();
-const SIZE_TIMESTAMP: usize = std::mem::size_of::<u64>();
-const SIZE_KEY_LEN: usize = SIZE_KEY_OVERLAP_LEN + SIZE_REST_KEY_LEN + SIZE_TIMESTAMP;
 const SIZE_VALUE_LEN: usize = std::mem::size_of::<u16>();
 
 /// A block is the smallest unit of read and caching in LSM tree. It is a collection of sorted key-value pairs.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Block {
     pub(crate) data: Vec<u8>,
     pub(crate) offsets: Vec<u16>,
@@ -63,5 +59,40 @@ impl Block {
         let data = data[..data_len].to_vec();
 
         Block { data, offsets }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::key::KeySlice;
+
+    use super::*;
+
+    #[test]
+    fn test_decode_encode() {
+        let mut builder = BlockBuilder::new(1024);
+        let ok = builder.add(KeySlice::from_slice(b"123", 0), b"666");
+        assert!(ok);
+
+        let block = builder.build();
+        let data = block.encode();
+        let block2 = Block::decode(&data);
+        assert_eq!(block, block2);
+    }
+
+    #[test]
+    fn test_decode_encode2() {
+        let mut builder = BlockBuilder::new(1024);
+        let ok = builder.add(KeySlice::from_slice(b"123", 0), b"666");
+        assert!(ok);
+        let ok = builder.add(KeySlice::from_slice(b"124", 0), b"111");
+        assert!(ok);
+        let ok = builder.add(KeySlice::from_slice(b"111", 0), b"7");
+        assert!(ok);
+
+        let block = builder.build();
+        let data = block.encode();
+        let block2 = Block::decode(&data);
+        assert_eq!(block, block2);
     }
 }
