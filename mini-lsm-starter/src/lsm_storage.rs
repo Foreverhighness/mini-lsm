@@ -22,10 +22,10 @@ use crate::iterators::concat_iterator::SstConcatIterator;
 use crate::iterators::merge_iterator::MergeIterator;
 use crate::iterators::two_merge_iterator::TwoMergeIterator;
 use crate::iterators::StorageIterator;
-use crate::key::KeySlice;
+use crate::key::{TS_DEFAULT, TS_RANGE_BEGIN};
 use crate::lsm_iterator::{FusedIterator, LsmIterator};
 use crate::manifest::{Manifest, ManifestRecord};
-use crate::mem_table::MemTable;
+use crate::mem_table::{MemTable, UserKeyRef};
 use crate::mvcc::LsmMvccInner;
 use crate::table::{FileObject, SsTable, SsTableBuilder, SsTableIterator};
 
@@ -465,6 +465,8 @@ impl LsmStorageInner {
             let guard = self.state.read();
             Arc::clone(&guard)
         };
+
+        let key = UserKeyRef::from_slice(key, TS_DEFAULT);
         if let Some(v) = snapshot.memtable.get(key) {
             return Ok(Some(v).filter(|v| !v.is_empty()));
         }
@@ -479,18 +481,17 @@ impl LsmStorageInner {
         }
 
         let key_within_sst = move |sst: &Arc<SsTable>| {
-            let first_key = sst.first_key().raw_ref();
-            let last_key = sst.last_key().raw_ref();
+            let first_key = sst.first_key().as_key_slice();
+            let last_key = sst.last_key().as_key_slice();
             first_key <= key && key <= last_key
         };
 
         let key_in_bloom = move |sst: &Arc<SsTable>| {
             sst.bloom.as_ref().map_or(true, |bloom| {
-                bloom.may_contain(farmhash::fingerprint32(key))
+                bloom.may_contain(farmhash::fingerprint32(key.key_ref()))
             })
         };
 
-        let key = KeySlice::from_slice(key);
         let l0_iters = snapshot
             .l0_sstables
             .iter()
@@ -538,9 +539,13 @@ impl LsmStorageInner {
         for record in batch {
             match *record {
                 WriteBatchRecord::Put(ref key, ref value) => {
-                    memtable.put(key.as_ref(), value.as_ref())?
+                    let key = UserKeyRef::from_slice(key.as_ref(), TS_DEFAULT);
+                    memtable.put(key, value.as_ref())?
                 }
-                WriteBatchRecord::Del(ref key) => memtable.put(key.as_ref(), &[])?,
+                WriteBatchRecord::Del(ref key) => {
+                    let key = UserKeyRef::from_slice(key.as_ref(), TS_DEFAULT);
+                    memtable.put(key, &[])?
+                }
             }
         }
         let size = guard_arc_state.memtable.approximate_size();
@@ -562,6 +567,8 @@ impl LsmStorageInner {
 
     /// Put a key-value pair into the storage by writing into the current memtable.
     pub fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
+        let key = UserKeyRef::from_slice(key, TS_DEFAULT);
+
         let guard_arc_state = self.state.read();
         guard_arc_state.memtable.put(key, value)?;
         let size = guard_arc_state.memtable.approximate_size();
@@ -708,10 +715,13 @@ impl LsmStorageInner {
         lower: Bound<&[u8]>,
         upper: Bound<&[u8]>,
     ) -> Result<FusedIterator<LsmIterator>> {
+        let lower = lower.map(|x| UserKeyRef::from_slice(x, TS_RANGE_BEGIN));
+        let upper = upper.map(|x| UserKeyRef::from_slice(x, TS_RANGE_BEGIN));
         let snapshot = {
             let snapshot = self.state.read();
             Arc::clone(&snapshot)
         };
+
         let memtable_iters = std::iter::once(&snapshot.memtable)
             .chain(snapshot.imm_memtables.iter())
             .map(|memtable| Box::new(memtable.scan(lower, upper)))
@@ -719,8 +729,8 @@ impl LsmStorageInner {
         let memtable_iter = MergeIterator::create(memtable_iters);
 
         let range_overlap_with_sst = move |sst: &Arc<SsTable>| {
-            let first_key = sst.first_key().raw_ref();
-            let last_key = sst.last_key().raw_ref();
+            let first_key = sst.first_key().as_key_slice();
+            let last_key = sst.last_key().as_key_slice();
             match lower {
                 Bound::Included(left) if last_key < left => return false,
                 Bound::Excluded(left) if last_key <= left => return false,
@@ -741,7 +751,7 @@ impl LsmStorageInner {
                 let sst = &snapshot.sstables[sst_id];
                 range_overlap_with_sst(sst).then(move || {
                     let table = Arc::clone(sst);
-                    let iter = match lower.map(KeySlice::from_slice) {
+                    let iter = match lower {
                         Bound::Included(key) => SsTableIterator::create_and_seek_to_key(table, key),
                         Bound::Excluded(key) => SsTableIterator::create_and_seek_to_key(table, key)
                             .and_then(|mut iter| {
@@ -778,7 +788,8 @@ impl LsmStorageInner {
         let memtable_l0_iter = TwoMergeIterator::create(memtable_iter, l0_iter)?;
 
         let iter = TwoMergeIterator::create(memtable_l0_iter, level_iter)?;
-        let lsm_iter = LsmIterator::new(iter, upper)?;
+        let upper = upper.map(|key| key.key_ref());
+        let lsm_iter = LsmIterator::new(iter, upper, TS_DEFAULT)?;
         Ok(FusedIterator::new(lsm_iter))
     }
 }
