@@ -1,19 +1,19 @@
 #![allow(dead_code)]
 
-use std::{cmp::Reverse, fmt::Debug};
+use std::{cmp::Reverse, fmt::Debug, marker::PhantomData};
 
-use bytes::Bytes;
+use bytes::{Buf, BufMut, Bytes};
 
-pub(super) const TS_ENABLED: bool = true;
+pub const TS_ENABLED: bool = true;
 
-type TimeStamp = u64;
+pub type TimeStamp = u64;
 
 pub struct TimeStampedKey<T: AsRef<[u8]>>(T, TimeStamp);
 
-pub(super) type Key<T> = TimeStampedKey<T>;
-pub(super) type KeySlice<'a> = Key<&'a [u8]>;
-pub(super) type KeyVec = Key<Vec<u8>>;
-pub(super) type KeyBytes = Key<Bytes>;
+pub type Key<T> = TimeStampedKey<T>;
+pub type KeySlice<'a> = Key<&'a [u8]>;
+pub type KeyVec = Key<Vec<u8>>;
+pub type KeyBytes = Key<Bytes>;
 
 /// Temporary, should remove after implementing full week 3 day 1 + 2.
 pub const TS_DEFAULT: TimeStamp = 0;
@@ -106,6 +106,19 @@ impl Key<Bytes> {
         Self(Bytes::new(), TS_DEFAULT)
     }
 
+    /// recover one record from wal
+    pub fn recover_from_wal(buf: &mut &[u8], key_len: usize) -> Self {
+        let key = Bytes::copy_from_slice(&buf[..key_len]);
+        buf.advance(key_len);
+        let ts = buf.get_u64();
+
+        TimeStampedKey(key, ts)
+    }
+
+    pub fn copy_from_slice(key: KeySlice) -> Self {
+        Self(Bytes::copy_from_slice(key.0), key.1)
+    }
+
     pub fn as_key_slice(&self) -> KeySlice {
         TimeStampedKey(&self.0, self.1)
     }
@@ -132,6 +145,14 @@ impl Key<Bytes> {
     }
 }
 
+pub struct KeyBytesGuard<'a>(KeyBytes, PhantomData<&'a [u8]>);
+
+impl AsRef<KeyBytes> for KeyBytesGuard<'_> {
+    fn as_ref(&self) -> &KeyBytes {
+        &self.0
+    }
+}
+
 impl<'a> Key<&'a [u8]> {
     pub fn to_key_vec(self) -> KeyVec {
         TimeStampedKey(self.0.to_vec(), self.1)
@@ -140,6 +161,32 @@ impl<'a> Key<&'a [u8]> {
     /// Create a key slice from a slice. Will be removed in week 3.
     pub fn from_slice(slice: &'a [u8], ts: TimeStamp) -> Self {
         Self(slice, ts)
+    }
+
+    /// put self into wal record
+    pub fn put_into_wal(&self, buf: &mut Vec<u8>) {
+        let key_len = self.key_len().try_into().unwrap();
+        buf.put_u16(key_len);
+        buf.put_slice(self.key_ref());
+        buf.put_u64(self.ts());
+    }
+
+    /// # Examples
+    ///
+    /// ```compile_fail
+    /// let key_bytes = KeyBytes::new();
+    /// let guard = {
+    ///     let key_slice = key_bytes.as_key_slice();
+    ///     key_slice.as_key_bytes()
+    /// };
+    /// ```
+    pub fn as_key_bytes(self) -> KeyBytesGuard<'a> {
+        // This is safe because the guard lifetime no longer than self
+        let bytes = unsafe { std::mem::transmute::<&'_ [u8], &'static [u8]>(self.0) };
+        let bytes = Bytes::from_static(bytes);
+        let ts = self.1;
+
+        KeyBytesGuard(KeyBytes::from_bytes_with_ts(bytes, ts), PhantomData)
     }
 
     pub fn key_ref(self) -> &'a [u8] {
@@ -200,5 +247,21 @@ impl<T: AsRef<[u8]> + PartialOrd> PartialOrd for Key<T> {
 impl<T: AsRef<[u8]> + Ord> Ord for Key<T> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         (self.0.as_ref(), Reverse(self.1)).cmp(&(other.0.as_ref(), Reverse(other.1)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_as_bytes_guard() {
+        let key_bytes = KeyBytes::from_bytes_with_ts(Bytes::from_static(b"233"), 666);
+        let guard = {
+            let key_slice = key_bytes.as_key_slice();
+            key_slice.as_key_bytes()
+        };
+
+        assert_eq!(&key_bytes, guard.as_ref())
     }
 }
