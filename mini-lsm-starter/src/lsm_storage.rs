@@ -22,7 +22,7 @@ use crate::iterators::concat_iterator::SstConcatIterator;
 use crate::iterators::merge_iterator::MergeIterator;
 use crate::iterators::two_merge_iterator::TwoMergeIterator;
 use crate::iterators::StorageIterator;
-use crate::key::{TS_DEFAULT, TS_RANGE_BEGIN};
+use crate::key::{TS_DEFAULT, TS_RANGE_BEGIN, TS_RANGE_END};
 use crate::lsm_iterator::{FusedIterator, LsmIterator};
 use crate::manifest::{Manifest, ManifestRecord};
 use crate::mem_table::{MemTable, UserKeyRef};
@@ -715,8 +715,8 @@ impl LsmStorageInner {
         lower: Bound<&[u8]>,
         upper: Bound<&[u8]>,
     ) -> Result<FusedIterator<LsmIterator>> {
-        let lower = lower.map(|x| UserKeyRef::from_slice(x, TS_RANGE_BEGIN));
-        let upper = upper.map(|x| UserKeyRef::from_slice(x, TS_RANGE_BEGIN));
+        let lower = lower.map(|x| UserKeyRef::from_slice(x, TS_DEFAULT));
+        let upper = upper.map(|x| UserKeyRef::from_slice(x, TS_DEFAULT));
         let snapshot = {
             let snapshot = self.state.read();
             Arc::clone(&snapshot)
