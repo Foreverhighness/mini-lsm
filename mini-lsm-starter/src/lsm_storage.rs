@@ -466,7 +466,7 @@ impl LsmStorageInner {
             Arc::clone(&guard)
         };
 
-        let key = UserKeyRef::from_slice(key, TS_DEFAULT);
+        let key = UserKeyRef::from_slice_ts(key, TS_DEFAULT);
         if let Some(v) = snapshot.memtable.get(key) {
             return Ok(Some(v).filter(|v| !v.is_empty()));
         }
@@ -539,11 +539,11 @@ impl LsmStorageInner {
         for record in batch {
             match *record {
                 WriteBatchRecord::Put(ref key, ref value) => {
-                    let key = UserKeyRef::from_slice(key.as_ref(), TS_DEFAULT);
+                    let key = UserKeyRef::from_slice_ts(key.as_ref(), TS_DEFAULT);
                     memtable.put(key, value.as_ref())?;
                 }
                 WriteBatchRecord::Del(ref key) => {
-                    let key = UserKeyRef::from_slice(key.as_ref(), TS_DEFAULT);
+                    let key = UserKeyRef::from_slice_ts(key.as_ref(), TS_DEFAULT);
                     memtable.put(key, &[])?;
                 }
             }
@@ -567,7 +567,7 @@ impl LsmStorageInner {
 
     /// Put a key-value pair into the storage by writing into the current memtable.
     pub fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
-        let key = UserKeyRef::from_slice(key, TS_DEFAULT);
+        let key = UserKeyRef::from_slice_ts(key, TS_DEFAULT);
 
         let guard_arc_state = self.state.read();
         guard_arc_state.memtable.put(key, value)?;
@@ -715,8 +715,8 @@ impl LsmStorageInner {
         lower: Bound<&[u8]>,
         upper: Bound<&[u8]>,
     ) -> Result<FusedIterator<LsmIterator>> {
-        let lower = lower.map(|x| UserKeyRef::from_slice(x, TS_DEFAULT));
-        let upper = upper.map(|x| UserKeyRef::from_slice(x, TS_DEFAULT));
+        let lower = lower.map(|x| UserKeyRef::from_slice_ts(x, TS_DEFAULT));
+        let upper = upper.map(|x| UserKeyRef::from_slice_ts(x, TS_DEFAULT));
         let snapshot = {
             let snapshot = self.state.read();
             Arc::clone(&snapshot)

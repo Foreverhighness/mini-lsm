@@ -207,8 +207,7 @@ impl<'a> Key<&'a [u8]> {
         TimeStampedKey(self.0.to_vec(), self.1)
     }
 
-    /// Create a key slice from a slice. Will be removed in week 3.
-    pub fn from_slice(slice: &'a [u8], ts: TimeStamp) -> Self {
+    pub fn from_slice_ts(slice: &'a [u8], ts: TimeStamp) -> Self {
         Self(slice, ts)
     }
 
