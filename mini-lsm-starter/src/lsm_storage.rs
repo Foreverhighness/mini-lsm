@@ -22,7 +22,7 @@ use crate::iterators::concat_iterator::SstConcatIterator;
 use crate::iterators::merge_iterator::MergeIterator;
 use crate::iterators::two_merge_iterator::TwoMergeIterator;
 use crate::iterators::StorageIterator;
-use crate::key::{TS_DEFAULT, TS_RANGE_BEGIN, TS_RANGE_END};
+use crate::key::{TS_DEFAULT, TS_ENABLED, TS_RANGE_BEGIN, TS_RANGE_END};
 use crate::lsm_iterator::{FusedIterator, LsmIterator};
 use crate::manifest::{Manifest, ManifestRecord};
 use crate::mem_table::{MemTable, UserKeyRef};
@@ -434,6 +434,10 @@ impl LsmStorageInner {
 
         next_sst_id += 1;
 
+        // TODO(fh): correct set initial_ts
+        let initial_ts = if TS_ENABLED { 0 } else { TS_DEFAULT };
+        let mvcc = TS_ENABLED.then(|| LsmMvccInner::new(initial_ts));
+
         let storage = Self {
             state: Arc::new(RwLock::new(Arc::new(state))),
             state_lock: Mutex::new(()),
@@ -443,7 +447,7 @@ impl LsmStorageInner {
             compaction_controller,
             manifest: Some(manifest),
             options: options.into(),
-            mvcc: None,
+            mvcc,
             compaction_filters: Arc::new(Mutex::new(Vec::new())),
         };
 
@@ -534,16 +538,22 @@ impl LsmStorageInner {
 
     /// Write a batch of data into the storage. Implement in week 2 day 7.
     pub fn write_batch<T: AsRef<[u8]>>(&self, batch: &[WriteBatchRecord<T>]) -> Result<()> {
+        let (_guard, ts) = self
+            .mvcc
+            .as_ref()
+            .map(|mvcc| (Some(mvcc.write_lock.lock()), mvcc.latest_commit_ts() + 1))
+            .unwrap_or_default();
+
         let guard_arc_state = self.state.read();
         let memtable = &guard_arc_state.memtable;
         for record in batch {
             match *record {
                 WriteBatchRecord::Put(ref key, ref value) => {
-                    let key = UserKeyRef::from_slice_ts(key.as_ref(), TS_DEFAULT);
+                    let key = UserKeyRef::from_slice_ts(key.as_ref(), ts);
                     memtable.put(key, value.as_ref())?;
                 }
                 WriteBatchRecord::Del(ref key) => {
-                    let key = UserKeyRef::from_slice_ts(key.as_ref(), TS_DEFAULT);
+                    let key = UserKeyRef::from_slice_ts(key.as_ref(), ts);
                     memtable.put(key, &[])?;
                 }
             }
@@ -560,6 +570,10 @@ impl LsmStorageInner {
             if current_memtable_reaches_capacity {
                 self.force_freeze_memtable(&state_lock)?;
             }
+        }
+
+        if let Some(ref mvcc) = self.mvcc {
+            mvcc.update_commit_ts(ts);
         }
 
         Ok(())
@@ -715,8 +729,8 @@ impl LsmStorageInner {
         lower: Bound<&[u8]>,
         upper: Bound<&[u8]>,
     ) -> Result<FusedIterator<LsmIterator>> {
-        let lower = lower.map(|x| UserKeyRef::from_slice_ts(x, TS_DEFAULT));
-        let upper = upper.map(|x| UserKeyRef::from_slice_ts(x, TS_DEFAULT));
+        let lower = lower.map(|x| UserKeyRef::from_slice_ts(x, TS_RANGE_BEGIN));
+        let upper = upper.map(|x| UserKeyRef::from_slice_ts(x, TS_RANGE_END));
         let snapshot = {
             let snapshot = self.state.read();
             Arc::clone(&snapshot)
