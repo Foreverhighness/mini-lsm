@@ -255,20 +255,19 @@ impl StorageIterator for MemTableIterator {
 
 #[cfg(test)]
 mod tests {
-    use crate::key::{Key, TS_RANGE_BEGIN, TS_RANGE_END};
+    use crate::key::{TS_RANGE_BEGIN, TS_RANGE_END};
 
     use super::*;
 
     fn key_in_range(key: KeySlice, lower: Bound<KeySlice>, upper: Bound<KeySlice>) -> bool {
-        let (key, ts) = key.into_inner();
-        match lower.map(Key::into_inner) {
-            Bound::Included((left, read_ts)) if key < left || ts > read_ts => return false,
-            Bound::Excluded((left, read_ts)) if key <= left || ts > read_ts => return false,
+        match lower {
+            Bound::Included(left) if key.key_ref() < left.key_ref() => return false,
+            Bound::Excluded(left) if key.key_ref() <= left.key_ref() => return false,
             _ => (),
         }
-        match upper.map(Key::into_inner) {
-            Bound::Included((right, read_ts)) if right < key || ts > read_ts => return false,
-            Bound::Excluded((right, read_ts)) if right <= key || ts > read_ts => return false,
+        match upper {
+            Bound::Included(right) if right.key_ref() < key.key_ref() => return false,
+            Bound::Excluded(right) if right.key_ref() <= key.key_ref() => return false,
             _ => (),
         }
         true
