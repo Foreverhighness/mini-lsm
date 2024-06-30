@@ -729,8 +729,8 @@ impl LsmStorageInner {
         lower: Bound<&[u8]>,
         upper: Bound<&[u8]>,
     ) -> Result<FusedIterator<LsmIterator>> {
-        let lower = lower.map(|x| UserKeyRef::from_slice_ts(x, TS_RANGE_BEGIN));
-        let upper = upper.map(|x| UserKeyRef::from_slice_ts(x, TS_RANGE_END));
+        let lower_with_ts = lower.map(|x| UserKeyRef::from_slice_ts(x, TS_RANGE_BEGIN));
+        let upper_with_ts = upper.map(|x| UserKeyRef::from_slice_ts(x, TS_RANGE_END));
         let snapshot = {
             let snapshot = self.state.read();
             Arc::clone(&snapshot)
@@ -738,13 +738,13 @@ impl LsmStorageInner {
 
         let memtable_iters = std::iter::once(&snapshot.memtable)
             .chain(snapshot.imm_memtables.iter())
-            .map(|memtable| Box::new(memtable.scan(lower, upper)))
+            .map(|memtable| Box::new(memtable.scan(lower_with_ts, upper_with_ts)))
             .collect();
         let memtable_iter = MergeIterator::create(memtable_iters);
 
         let range_overlap_with_sst = move |sst: &Arc<SsTable>| {
-            let first_key = sst.first_key().as_key_slice();
-            let last_key = sst.last_key().as_key_slice();
+            let first_key = sst.first_key().key_ref();
+            let last_key = sst.last_key().key_ref();
             match lower {
                 Bound::Included(left) if last_key < left => return false,
                 Bound::Excluded(left) if last_key <= left => return false,
@@ -765,7 +765,7 @@ impl LsmStorageInner {
                 let sst = &snapshot.sstables[sst_id];
                 range_overlap_with_sst(sst).then(move || {
                     let table = Arc::clone(sst);
-                    let iter = match lower {
+                    let iter = match lower_with_ts {
                         Bound::Included(key) => SsTableIterator::create_and_seek_to_key(table, key),
                         Bound::Excluded(key) => SsTableIterator::create_and_seek_to_key(table, key)
                             .and_then(|mut iter| {
@@ -802,7 +802,6 @@ impl LsmStorageInner {
         let memtable_l0_iter = TwoMergeIterator::create(memtable_iter, l0_iter)?;
 
         let iter = TwoMergeIterator::create(memtable_l0_iter, level_iter)?;
-        let upper = upper.map(UserKeyRef::key_ref);
         let lsm_iter = LsmIterator::new(iter, upper, TS_DEFAULT)?;
         Ok(FusedIterator::new(lsm_iter))
     }

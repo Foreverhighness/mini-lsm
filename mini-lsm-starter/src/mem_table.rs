@@ -255,17 +255,20 @@ impl StorageIterator for MemTableIterator {
 
 #[cfg(test)]
 mod tests {
+    use crate::key::{Key, TS_RANGE_BEGIN, TS_RANGE_END};
+
     use super::*;
 
     fn key_in_range(key: KeySlice, lower: Bound<KeySlice>, upper: Bound<KeySlice>) -> bool {
-        match lower {
-            Bound::Included(left) if key < left => return false,
-            Bound::Excluded(left) if key <= left => return false,
+        let (key, ts) = key.into_inner();
+        match lower.map(Key::into_inner) {
+            Bound::Included((left, read_ts)) if key < left || ts > read_ts => return false,
+            Bound::Excluded((left, read_ts)) if key <= left || ts > read_ts => return false,
             _ => (),
         }
-        match upper {
-            Bound::Included(right) if right < key => return false,
-            Bound::Excluded(right) if right <= key => return false,
+        match upper.map(Key::into_inner) {
+            Bound::Included((right, read_ts)) if right < key || ts > read_ts => return false,
+            Bound::Excluded((right, read_ts)) if right <= key || ts > read_ts => return false,
             _ => (),
         }
         true
@@ -273,8 +276,8 @@ mod tests {
 
     #[test]
     fn test_map_key_bound() {
-        let lower = UserKeyRef::from_slice_ts(b"2", TS_DEFAULT);
-        let upper = UserKeyRef::from_slice_ts(b"3", TS_DEFAULT);
+        let lower = UserKeyRef::from_slice_ts(b"2", TS_RANGE_BEGIN);
+        let upper = UserKeyRef::from_slice_ts(b"3", TS_RANGE_END);
 
         let v1 = UserKeyRef::from_slice_ts(b"1", TS_DEFAULT);
         let v2 = UserKeyRef::from_slice_ts(b"2", TS_DEFAULT);
