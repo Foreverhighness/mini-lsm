@@ -252,3 +252,105 @@ impl StorageIterator for MemTableIterator {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn key_in_range(key: KeySlice, lower: Bound<KeySlice>, upper: Bound<KeySlice>) -> bool {
+        match lower {
+            Bound::Included(left) if key < left => return false,
+            Bound::Excluded(left) if key <= left => return false,
+            _ => (),
+        }
+        match upper {
+            Bound::Included(right) if right < key => return false,
+            Bound::Excluded(right) if right <= key => return false,
+            _ => (),
+        }
+        true
+    }
+
+    #[test]
+    fn test_map_key_bound() {
+        let lower = UserKeyRef::from_slice(b"2", TS_DEFAULT);
+        let upper = UserKeyRef::from_slice(b"3", TS_DEFAULT);
+
+        let v1 = UserKeyRef::from_slice(b"1", TS_DEFAULT);
+        let v2 = UserKeyRef::from_slice(b"2", TS_DEFAULT);
+        let v3 = UserKeyRef::from_slice(b"3", TS_DEFAULT);
+        let v4 = UserKeyRef::from_slice(b"4", TS_DEFAULT);
+
+        {
+            let lower = Bound::Unbounded;
+            let upper = Bound::Excluded(upper);
+            assert!(key_in_range(v1, lower, upper));
+            assert!(key_in_range(v2, lower, upper));
+            assert!(!key_in_range(v3, lower, upper));
+            assert!(!key_in_range(v4, lower, upper));
+        }
+
+        {
+            let lower = Bound::Unbounded;
+            let upper = Bound::Included(upper);
+            assert!(key_in_range(v1, lower, upper));
+            assert!(key_in_range(v2, lower, upper));
+            assert!(key_in_range(v3, lower, upper));
+            assert!(!key_in_range(v4, lower, upper));
+        }
+
+        {
+            let lower = Bound::Excluded(lower);
+            let upper = Bound::Unbounded;
+            assert!(!key_in_range(v1, lower, upper));
+            assert!(!key_in_range(v2, lower, upper));
+            assert!(key_in_range(v3, lower, upper));
+            assert!(key_in_range(v4, lower, upper));
+        }
+
+        {
+            let lower = Bound::Included(lower);
+            let upper = Bound::Unbounded;
+            assert!(!key_in_range(v1, lower, upper));
+            assert!(key_in_range(v2, lower, upper));
+            assert!(key_in_range(v3, lower, upper));
+            assert!(key_in_range(v4, lower, upper));
+        }
+
+        {
+            let lower = Bound::Included(lower);
+            let upper = Bound::Included(upper);
+            assert!(!key_in_range(v1, lower, upper));
+            assert!(key_in_range(v2, lower, upper));
+            assert!(key_in_range(v3, lower, upper));
+            assert!(!key_in_range(v4, lower, upper));
+        }
+
+        {
+            let lower = Bound::Excluded(lower);
+            let upper = Bound::Excluded(upper);
+            assert!(!key_in_range(v1, lower, upper));
+            assert!(!key_in_range(v2, lower, upper));
+            assert!(!key_in_range(v3, lower, upper));
+            assert!(!key_in_range(v4, lower, upper));
+        }
+
+        {
+            let lower = Bound::Included(lower);
+            let upper = Bound::Excluded(upper);
+            assert!(!key_in_range(v1, lower, upper));
+            assert!(key_in_range(v2, lower, upper));
+            assert!(!key_in_range(v3, lower, upper));
+            assert!(!key_in_range(v4, lower, upper));
+        }
+
+        {
+            let lower = Bound::Excluded(lower);
+            let upper = Bound::Included(upper);
+            assert!(!key_in_range(v1, lower, upper));
+            assert!(!key_in_range(v2, lower, upper));
+            assert!(key_in_range(v3, lower, upper));
+            assert!(!key_in_range(v4, lower, upper));
+        }
+    }
+}
