@@ -5,8 +5,6 @@ use std::{fmt::Debug, marker::PhantomData};
 
 use bytes::{Buf, BufMut, Bytes};
 
-use super::TimeStamp;
-
 pub const TS_ENABLED: bool = false;
 
 #[derive(Clone, Copy)]
@@ -196,7 +194,7 @@ impl<'a> Key<&'a [u8]> {
     }
 
     /// Create a key slice from a slice. Will be removed in week 3.
-    pub fn from_slice(slice: &'a [u8], _: TimeStamp) -> Self {
+    pub fn from_slice(slice: &'a [u8]) -> Self {
         Self(slice)
     }
 
