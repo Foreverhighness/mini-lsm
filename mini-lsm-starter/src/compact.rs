@@ -20,7 +20,7 @@ use crate::iterators::concat_iterator::SstConcatIterator;
 use crate::iterators::merge_iterator::MergeIterator;
 use crate::iterators::two_merge_iterator::TwoMergeIterator;
 use crate::iterators::StorageIterator;
-use crate::key::KeySlice;
+use crate::key::{KeySlice, TS_ENABLED};
 use crate::lsm_storage::{LsmStorageInner, LsmStorageState};
 use crate::manifest::ManifestRecord;
 use crate::table::{SsTable, SsTableBuilder, SsTableIterator};
@@ -211,17 +211,31 @@ impl LsmStorageInner {
     {
         let mut builder = None;
         let mut tables = Vec::new();
+        let mut prev_key = Vec::new();
         while iter.is_valid() {
             let key = iter.key();
             let value = iter.value();
-            if !compact_to_bottom_level || !value.is_empty() {
-                let builder_mut =
-                    builder.get_or_insert_with(|| SsTableBuilder::new(self.options.block_size));
-                builder_mut.add(key, value);
-                if builder_mut.estimated_size() >= self.options.target_sst_size {
+            // TODO(fh): remove special judge
+            if TS_ENABLED || !compact_to_bottom_level || !value.is_empty() {
+                let same_key = key.key_ref() == prev_key;
+                let size_exceed = builder.as_ref().map_or(false, |b: &SsTableBuilder| {
+                    b.estimated_size() >= self.options.target_sst_size
+                });
+
+                if !TS_ENABLED {
+                    debug_assert!(!same_key);
+                }
+
+                if !same_key && size_exceed {
                     let builder = builder.take().unwrap();
                     tables.push(self.build_sst(builder)?);
                 }
+
+                let builder_mut =
+                    builder.get_or_insert_with(|| SsTableBuilder::new(self.options.block_size));
+
+                builder_mut.add(key, value);
+                key.key_ref().clone_into(&mut prev_key);
             }
             iter.next()?;
         }
