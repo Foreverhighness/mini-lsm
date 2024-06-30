@@ -84,7 +84,7 @@ impl LeveledCompactionController {
             .copied()
             .collect::<Vec<_>>();
 
-        // TODO(fh): use partition_point to optimize O(n) -> O(nlogn)
+        // TODO(fh): use partition_point to optimize O(n) -> O(logn)
         let _res = {
             let mut left = level
                 .partition_point(|id| snapshot.sstables[id].first_key().as_key_slice() <= lower_key)
