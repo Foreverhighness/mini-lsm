@@ -23,6 +23,7 @@ pub struct LsmIterator {
     inner: LsmIteratorInner,
     upper: Bound<Bytes>,
     read_ts: TimeStamp,
+    prev_key: Vec<u8>,
 }
 
 impl LsmIterator {
@@ -39,6 +40,7 @@ impl LsmIterator {
             inner: iter,
             upper,
             read_ts,
+            prev_key: Vec::new(),
         })
     }
 }
@@ -69,12 +71,21 @@ impl StorageIterator for LsmIterator {
         self.inner.next()?;
 
         while self.is_valid() {
-            let tombstone = self.value().is_empty();
-
-            if !tombstone {
-                break;
+            let key = self.inner.key().key_ref();
+            let same_key = key == self.prev_key;
+            if same_key {
+                self.inner.next()?;
+                continue;
             }
-            self.inner.next()?;
+            key.clone_into(&mut self.prev_key);
+
+            let tombstone = self.value().is_empty();
+            if tombstone {
+                self.inner.next()?;
+                continue;
+            }
+
+            break;
         }
         Ok(())
     }
