@@ -95,11 +95,11 @@ impl MemTable {
     }
 
     pub fn for_testing_put_slice(&self, key: &[u8], value: &[u8]) -> Result<()> {
-        self.put(UserKeyRef::from_slice(key, TS_DEFAULT), value)
+        self.put(UserKeyRef::from_slice_ts(key, TS_DEFAULT), value)
     }
 
     pub fn for_testing_get_slice(&self, key: &[u8]) -> Option<Bytes> {
-        self.get(UserKeyRef::from_slice(key, TS_DEFAULT))
+        self.get(UserKeyRef::from_slice_ts(key, TS_DEFAULT))
     }
 
     pub fn for_testing_scan_slice(
@@ -107,7 +107,7 @@ impl MemTable {
         lower: Bound<&[u8]>,
         upper: Bound<&[u8]>,
     ) -> MemTableIterator {
-        let map = |b| UserKeyRef::from_slice(b, TS_DEFAULT);
+        let map = |b| UserKeyRef::from_slice_ts(b, TS_DEFAULT);
         self.scan(lower.map(map), upper.map(map))
     }
 
@@ -175,7 +175,7 @@ impl MemTable {
 
         for entry in self.map.iter() {
             let key = entry.key();
-            let key = UserKeyRef::from_slice(key.key_ref(), TS_DEFAULT);
+            let key = UserKeyRef::from_slice_ts(key.key_ref(), key.ts());
             let value = entry.value();
             builder.add(key, value);
         }
@@ -273,13 +273,13 @@ mod tests {
 
     #[test]
     fn test_map_key_bound() {
-        let lower = UserKeyRef::from_slice(b"2", TS_DEFAULT);
-        let upper = UserKeyRef::from_slice(b"3", TS_DEFAULT);
+        let lower = UserKeyRef::from_slice_ts(b"2", TS_DEFAULT);
+        let upper = UserKeyRef::from_slice_ts(b"3", TS_DEFAULT);
 
-        let v1 = UserKeyRef::from_slice(b"1", TS_DEFAULT);
-        let v2 = UserKeyRef::from_slice(b"2", TS_DEFAULT);
-        let v3 = UserKeyRef::from_slice(b"3", TS_DEFAULT);
-        let v4 = UserKeyRef::from_slice(b"4", TS_DEFAULT);
+        let v1 = UserKeyRef::from_slice_ts(b"1", TS_DEFAULT);
+        let v2 = UserKeyRef::from_slice_ts(b"2", TS_DEFAULT);
+        let v3 = UserKeyRef::from_slice_ts(b"3", TS_DEFAULT);
+        let v4 = UserKeyRef::from_slice_ts(b"4", TS_DEFAULT);
 
         {
             let lower = Bound::Unbounded;

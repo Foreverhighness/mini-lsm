@@ -124,11 +124,11 @@ mod tests {
     #[test]
     fn test_iter() {
         let mut builder = BlockBuilder::new(1024);
-        let ok = builder.add(KeySlice::from_slice(b"123", 0), b"666");
+        let ok = builder.add(KeySlice::from_slice_ts(b"123", 0), b"666");
         assert!(ok);
-        let ok = builder.add(KeySlice::from_slice(b"124", 0), b"111");
+        let ok = builder.add(KeySlice::from_slice_ts(b"124", 0), b"111");
         assert!(ok);
-        let ok = builder.add(KeySlice::from_slice(b"111", 0), b"7");
+        let ok = builder.add(KeySlice::from_slice_ts(b"111", 0), b"7");
         assert!(ok);
 
         let block = builder.build();
