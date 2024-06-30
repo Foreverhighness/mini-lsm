@@ -729,8 +729,17 @@ impl LsmStorageInner {
         lower: Bound<&[u8]>,
         upper: Bound<&[u8]>,
     ) -> Result<FusedIterator<LsmIterator>> {
-        let lower_with_ts = lower.map(|x| UserKeyRef::from_slice_ts(x, TS_RANGE_BEGIN));
-        let upper_with_ts = upper.map(|x| UserKeyRef::from_slice_ts(x, TS_RANGE_END));
+        let lower_with_ts = match lower {
+            Bound::Included(x) => Bound::Included(UserKeyRef::from_slice_ts(x, TS_RANGE_BEGIN)),
+            Bound::Excluded(x) => Bound::Excluded(UserKeyRef::from_slice_ts(x, TS_RANGE_END)),
+            Bound::Unbounded => Bound::Unbounded,
+        };
+        let upper_with_ts = match upper {
+            Bound::Included(x) => Bound::Included(UserKeyRef::from_slice_ts(x, TS_RANGE_END)),
+            Bound::Excluded(x) => Bound::Excluded(UserKeyRef::from_slice_ts(x, TS_RANGE_BEGIN)),
+            Bound::Unbounded => Bound::Unbounded,
+        };
+
         let snapshot = {
             let snapshot = self.state.read();
             Arc::clone(&snapshot)
@@ -769,7 +778,7 @@ impl LsmStorageInner {
                         Bound::Included(key) => SsTableIterator::create_and_seek_to_key(table, key),
                         Bound::Excluded(key) => SsTableIterator::create_and_seek_to_key(table, key)
                             .and_then(|mut iter| {
-                                if iter.is_valid() && iter.key() == key {
+                                if iter.is_valid() && iter.key().key_ref() == key.key_ref() {
                                     iter.next()?;
                                 }
                                 Ok(iter)
