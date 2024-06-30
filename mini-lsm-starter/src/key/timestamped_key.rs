@@ -17,8 +17,8 @@ pub type KeyVec = Key<Vec<u8>>;
 pub type KeyBytes = Key<Bytes>;
 
 impl<T: AsRef<[u8]>> Key<T> {
-    pub fn into_inner(self) -> T {
-        self.0
+    pub fn into_inner(self) -> (T, TimeStamp) {
+        (self.0, self.1)
     }
 
     pub fn key_len(&self) -> usize {

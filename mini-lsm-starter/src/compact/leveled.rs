@@ -2,7 +2,7 @@ use std::ops::Bound;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{key::KeySlice, lsm_storage::LsmStorageState, table::SsTable};
+use crate::{lsm_storage::LsmStorageState, table::SsTable};
 
 const MB: usize = 1024 * 1024;
 
@@ -37,15 +37,12 @@ impl LeveledCompactionController {
     fn lower_upper_key<'r, 's: 'r>(
         snapshot: &'s LsmStorageState,
         sst_ids: &[usize],
-    ) -> (KeySlice<'r>, KeySlice<'r>) {
+    ) -> (&'r [u8], &'r [u8]) {
         sst_ids
             .iter()
             .map(|id| {
                 let sst = &snapshot.sstables[id];
-                (
-                    sst.first_key().as_key_slice(),
-                    sst.last_key().as_key_slice(),
-                )
+                (sst.first_key().key_ref(), sst.last_key().key_ref())
             })
             .reduce(|(lower, upper), (lo, up)| (lower.min(lo), upper.max(up)))
             .unwrap()
@@ -63,8 +60,8 @@ impl LeveledCompactionController {
         let level = &snapshot.levels[in_level - 1].1;
 
         let range_overlap_with_sst = move |sst: &SsTable| {
-            let first_key = sst.first_key().as_key_slice();
-            let last_key = sst.last_key().as_key_slice();
+            let first_key = sst.first_key().key_ref();
+            let last_key = sst.last_key().key_ref();
             match lower {
                 Bound::Included(left) if last_key < left => return false,
                 Bound::Excluded(left) if last_key <= left => return false,
@@ -87,10 +84,10 @@ impl LeveledCompactionController {
         // TODO(fh): use partition_point to optimize O(n) -> O(logn)
         let _res = {
             let mut left = level
-                .partition_point(|id| snapshot.sstables[id].first_key().as_key_slice() <= lower_key)
+                .partition_point(|id| snapshot.sstables[id].first_key().key_ref() <= lower_key)
                 .saturating_sub(1);
             if let Some(id) = level.get(left) {
-                if snapshot.sstables[id].last_key().as_key_slice() < lower_key {
+                if snapshot.sstables[id].last_key().key_ref() < lower_key {
                     left += 1;
                 }
             }
@@ -98,8 +95,8 @@ impl LeveledCompactionController {
                 debug_assert_eq!(level[left], res[0]);
             }
             // TODO(fh): get right right
-            let right = level
-                .partition_point(|id| snapshot.sstables[id].last_key().as_key_slice() <= upper_key);
+            let right =
+                level.partition_point(|id| snapshot.sstables[id].last_key().key_ref() <= upper_key);
             level[left..right].to_vec()
         };
 
@@ -250,10 +247,10 @@ impl LeveledCompactionController {
         let start = {
             let (lower_key, _) = Self::lower_upper_key(snapshot, upper_level_sst_ids);
             let mut left = lower_level
-                .partition_point(|id| snapshot.sstables[id].first_key().as_key_slice() <= lower_key)
+                .partition_point(|id| snapshot.sstables[id].first_key().key_ref() <= lower_key)
                 .saturating_sub(1);
             if let Some(id) = lower_level.get(left) {
-                if snapshot.sstables[id].last_key().as_key_slice() < lower_key {
+                if snapshot.sstables[id].last_key().key_ref() < lower_key {
                     left += 1;
                 }
             }
