@@ -10,7 +10,7 @@ use super::{
 };
 use crate::{
     block::BlockBuilder,
-    key::{KeyBytes, KeySlice, KeyVec},
+    key::{KeyBytes, KeySlice, KeyVec, TimeStamp, TS_MIN},
     lsm_storage::BlockCache,
 };
 
@@ -23,6 +23,7 @@ pub struct SsTableBuilder {
     pub(crate) meta: Vec<BlockMeta>,
     block_size: usize,
     key_hashes: Vec<u32>,
+    max_ts: TimeStamp,
 }
 
 impl SsTableBuilder {
@@ -36,6 +37,7 @@ impl SsTableBuilder {
             meta: Vec::new(),
             block_size,
             key_hashes: Vec::new(),
+            max_ts: TS_MIN,
         }
     }
 
@@ -48,6 +50,9 @@ impl SsTableBuilder {
             self.first_key.set_from_slice(key);
         }
 
+        self.max_ts = self.max_ts.max(key.ts());
+
+        // prepare bloom filter
         let hash = farmhash::fingerprint32(key.key_ref());
         self.key_hashes.push(hash);
 
@@ -117,7 +122,7 @@ impl SsTableBuilder {
         let block_meta_offset = self.data.len();
 
         let file = {
-            BlockMeta::encode_block_meta(&self.meta, &mut self.data);
+            BlockMeta::encode_block_meta(&self.meta, &mut self.data, self.max_ts);
             self.data.put_u32(block_meta_offset.try_into().unwrap());
 
             let bloom_filter_offset = self.data.len();
@@ -133,6 +138,8 @@ impl SsTableBuilder {
 
         let bloom = Some(bloom);
 
+        let max_ts = self.max_ts;
+
         Ok(SsTable {
             file,
             block_meta,
@@ -142,7 +149,7 @@ impl SsTableBuilder {
             first_key,
             last_key,
             bloom,
-            max_ts: Default::default(),
+            max_ts,
         })
     }
 
