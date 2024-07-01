@@ -28,20 +28,46 @@ pub struct LsmIterator {
 
 impl LsmIterator {
     pub(crate) fn new(
-        mut iter: LsmIteratorInner,
+        iter: LsmIteratorInner,
         upper: Bound<&[u8]>,
         read_ts: TimeStamp,
     ) -> Result<Self> {
         let upper = map_bound(upper);
-        while iter.is_valid() && iter.value().is_empty() {
-            iter.next()?;
-        }
-        Ok(Self {
+        let prev_key = iter.key().key_ref().to_vec();
+        let mut lsm_iter = Self {
             inner: iter,
             upper,
             read_ts,
-            prev_key: Vec::new(),
-        })
+            prev_key,
+        };
+        lsm_iter.next_valid_value()?;
+        Ok(lsm_iter)
+    }
+
+    fn next_valid_value(&mut self) -> Result<()> {
+        while self.is_valid() {
+            let (key, ts) = {
+                let key = self.inner.key();
+                (key.key_ref(), key.ts())
+            };
+
+            let same_key = key == self.prev_key;
+            let key_from_future = ts > self.read_ts;
+            if same_key || key_from_future {
+                self.inner.next()?;
+                continue;
+            }
+            key.clone_into(&mut self.prev_key);
+
+            let tombstone = self.value().is_empty();
+            if tombstone {
+                self.inner.next()?;
+                continue;
+            }
+
+            break;
+        }
+        Ok(())
     }
 }
 
@@ -70,23 +96,8 @@ impl StorageIterator for LsmIterator {
 
         self.inner.next()?;
 
-        while self.is_valid() {
-            let key = self.inner.key().key_ref();
-            let same_key = key == self.prev_key;
-            if same_key {
-                self.inner.next()?;
-                continue;
-            }
-            key.clone_into(&mut self.prev_key);
+        self.next_valid_value()?;
 
-            let tombstone = self.value().is_empty();
-            if tombstone {
-                self.inner.next()?;
-                continue;
-            }
-
-            break;
-        }
         Ok(())
     }
 
