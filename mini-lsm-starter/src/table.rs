@@ -12,7 +12,7 @@ use bytes::{Buf, BufMut};
 pub use iterator::SsTableIterator;
 
 use crate::block::Block;
-use crate::key::{KeyBytes, KeySlice};
+use crate::key::{KeyBytes, KeySlice, TimeStamp};
 use crate::lsm_storage::BlockCache;
 
 use self::bloom::Bloom;
@@ -51,7 +51,7 @@ impl BlockMeta {
     /// Encode block meta to a buffer.
     /// You may add extra fields to the buffer,
     /// in order to help keep track of `first_key` when decoding from the same buffer in the future.
-    pub fn encode_block_meta(block_meta: &[BlockMeta], buf: &mut Vec<u8>) {
+    pub fn encode_block_meta(block_meta: &[BlockMeta], buf: &mut Vec<u8>, max_ts: TimeStamp) {
         let start = buf.len();
 
         buf.put_u16(block_meta.len().try_into().unwrap());
@@ -64,9 +64,10 @@ impl BlockMeta {
             buf.put_u32(offset.try_into().unwrap());
 
             first_key.encode_raw(buf);
-
             last_key.encode_raw(buf);
         }
+
+        buf.put_u64(max_ts);
 
         let checksum = crc32fast::hash(&buf[start..]);
         buf.put_u32(checksum);
