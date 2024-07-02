@@ -12,7 +12,7 @@ use crossbeam_skiplist::SkipMap;
 use ouroboros::self_referencing;
 
 use crate::iterators::StorageIterator;
-use crate::key::{KeyBytes, KeySlice, TimeStamp, TS_DEFAULT};
+use crate::key::{KeyBytes, KeySlice, TimeStamp, TS_DEFAULT, TS_RANGE_END};
 use crate::table::SsTableBuilder;
 use crate::wal::Wal;
 
@@ -116,6 +116,15 @@ impl MemTable {
         self.map
             .get(key.as_key_bytes().as_ref())
             .map(|v| Bytes::clone(v.value()))
+    }
+
+    /// Get a value by key and read_ts.
+    pub fn get_with_ts(&self, key: UserKeyRef) -> Option<Bytes> {
+        let lower = Bound::Included(key);
+        let upper = Bound::Included(UserKeyRef::from_slice_ts(key.key_ref(), TS_RANGE_END));
+        let iter = self.scan(lower, upper);
+        iter.is_valid()
+            .then(|| Bytes::copy_from_slice(iter.value()))
     }
 
     /// Put a key-value pair into the mem-table.
