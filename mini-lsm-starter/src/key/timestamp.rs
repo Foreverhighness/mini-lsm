@@ -18,7 +18,7 @@ impl<'a> RawKey<&'a [u8]> {
     }
 }
 
-#[allow(dead_code)]
+#[allow(dead_code, clippy::unused_self)]
 impl<T: AsRef<[u8]>> RawKey<T> {
     pub fn ts(&self) -> TimeStamp {
         TS_DEFAULT

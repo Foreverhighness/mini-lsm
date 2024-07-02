@@ -432,7 +432,7 @@ impl LsmStorageInner {
                         .iter()
                         .map(|mmt| mmt.max_ts().unwrap())
                         .max(),
-                )
+                );
             }
 
             manifest
