@@ -13,7 +13,7 @@ use std::{
 
 use parking_lot::Mutex;
 
-use crate::lsm_storage::LsmStorageInner;
+use crate::{key::TimeStamp, lsm_storage::LsmStorageInner};
 
 use self::{txn::Transaction, watermark::Watermark};
 
@@ -60,11 +60,20 @@ impl LsmMvccInner {
         ts.1.watermark().unwrap_or(ts.0)
     }
 
+    pub fn remove_read_ts(&self, read_ts: TimeStamp) {
+        let (_, ref mut watermark) = *self.ts.lock();
+        watermark.remove_reader(read_ts);
+    }
+
     pub fn new_txn(&self, serializable: bool) -> Arc<Transaction> {
         let inner = self.weak.upgrade().unwrap();
+
+        let (read_ts, ref mut watermark) = *self.ts.lock();
+        watermark.add_reader(read_ts);
+
         // TODO(fh): clear default
         Arc::new(Transaction {
-            read_ts: self.latest_commit_ts(),
+            read_ts,
             inner,
             local_storage: Default::default(),
             committed: Default::default(),
