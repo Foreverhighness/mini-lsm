@@ -4,11 +4,11 @@ use super::{TimeStamp, TS_DEFAULT};
 
 use bytes::{Buf, BufMut, Bytes};
 
-use std::{cmp::Reverse, fmt::Debug, marker::PhantomData};
+use std::{cmp::Reverse, marker::PhantomData};
 
 pub const TS_ENABLED: bool = true;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct TimeStampedKey<T: AsRef<[u8]>>(T, TimeStamp);
 
 pub type Key<T> = TimeStampedKey<T>;
@@ -246,12 +246,6 @@ impl<'a> Key<&'a [u8]> {
         let ts = self.1;
 
         KeyBytesGuard(KeyBytes::from_bytes_with_ts(bytes, ts), PhantomData)
-    }
-}
-
-impl<T: AsRef<[u8]> + Debug> Debug for Key<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
     }
 }
 

@@ -33,12 +33,11 @@ impl LsmIterator {
         read_ts: TimeStamp,
     ) -> Result<Self> {
         let upper = map_bound(upper);
-        let prev_key = iter.key().key_ref().to_vec();
         let mut lsm_iter = Self {
             inner: iter,
             upper,
             read_ts,
-            prev_key,
+            prev_key: Vec::new(),
         };
         lsm_iter.next_valid_value()?;
         Ok(lsm_iter)

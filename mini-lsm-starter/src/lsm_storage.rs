@@ -508,8 +508,8 @@ impl LsmStorageInner {
             Arc::clone(&guard)
         };
 
-        let key = UserKeyRef::from_slice_ts(key, read_ts);
-        if let Some(v) = snapshot.memtable.get(key) {
+        let key_with_ts = UserKeyRef::from_slice_ts(key, read_ts);
+        if let Some(v) = snapshot.memtable.get_with_ts(key_with_ts) {
             return Ok(Some(v).filter(|v| !v.is_empty()));
         }
 
@@ -517,20 +517,20 @@ impl LsmStorageInner {
         // So that I can use `let imm_memtables = Arc::clone(&state.imm_memtables)` then immediately release the lock
         // Answered at week 1 day 6: because we are using Arc<LsmStorageState>, there are already an Arc wrapper.
         for memtable in &snapshot.imm_memtables {
-            if let Some(v) = memtable.get(key) {
+            if let Some(v) = memtable.get_with_ts(key_with_ts) {
                 return Ok(Some(v).filter(|v| !v.is_empty()));
             }
         }
 
         let key_within_sst = move |sst: &Arc<SsTable>| {
-            let first_key = sst.first_key().as_key_slice();
-            let last_key = sst.last_key().as_key_slice();
+            let first_key = sst.first_key().key_ref();
+            let last_key = sst.last_key().key_ref();
             first_key <= key && key <= last_key
         };
 
         let key_in_bloom = move |sst: &Arc<SsTable>| {
             sst.bloom.as_ref().map_or(true, |bloom| {
-                bloom.may_contain(farmhash::fingerprint32(key.key_ref()))
+                bloom.may_contain(farmhash::fingerprint32(key))
             })
         };
 
@@ -541,13 +541,13 @@ impl LsmStorageInner {
                 let sst = &snapshot.sstables[sst_id];
                 (key_within_sst(sst) && key_in_bloom(sst)).then(|| {
                     let table = Arc::clone(sst);
-                    let iter = SsTableIterator::create_and_seek_to_key(table, key);
+                    let iter = SsTableIterator::create_and_seek_to_key(table, key_with_ts);
                     iter.map(Box::new)
                 })
             })
             .collect::<Result<_>>()?;
         let l0_iter = MergeIterator::create(l0_iters);
-        if l0_iter.is_valid() && l0_iter.key() == key {
+        if l0_iter.is_valid() && l0_iter.key().key_ref() == key {
             return Ok(Some(Bytes::copy_from_slice(l0_iter.value())).filter(|v| !v.is_empty()));
         }
 
@@ -562,12 +562,13 @@ impl LsmStorageInner {
                         (key_within_sst(sst) && key_in_bloom(sst)).then(move || Arc::clone(sst))
                     })
                     .collect::<Vec<_>>();
-                (!sstables.is_empty())
-                    .then(|| SstConcatIterator::create_and_seek_to_key(sstables, key).map(Box::new))
+                (!sstables.is_empty()).then(|| {
+                    SstConcatIterator::create_and_seek_to_key(sstables, key_with_ts).map(Box::new)
+                })
             })
             .collect::<Result<_>>()?;
         let level_iter = MergeIterator::create(level_iters);
-        if level_iter.is_valid() && level_iter.key() == key {
+        if level_iter.is_valid() && level_iter.key().key_ref() == key {
             return Ok(Some(Bytes::copy_from_slice(level_iter.value())).filter(|v| !v.is_empty()));
         }
 
@@ -619,7 +620,10 @@ impl LsmStorageInner {
 
     /// Put a key-value pair into the storage by writing into the current memtable.
     pub fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
-        let key = UserKeyRef::from_slice_ts(key, TS_DEFAULT);
+        let ts = self.mvcc.as_ref().unwrap().latest_commit_ts() + 1;
+        self.mvcc.as_ref().unwrap().update_commit_ts(ts);
+
+        let key = UserKeyRef::from_slice_ts(key, ts);
 
         let guard_arc_state = self.state.read();
         guard_arc_state.memtable.put(key, value)?;

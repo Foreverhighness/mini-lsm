@@ -76,8 +76,6 @@ impl<
     }
 
     fn next(&mut self) -> Result<()> {
-        debug_assert!(self.is_valid());
-
         if self.using_a {
             self.a.next()?;
         } else {

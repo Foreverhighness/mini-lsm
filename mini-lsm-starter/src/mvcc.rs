@@ -64,7 +64,7 @@ impl LsmMvccInner {
         let inner = self.weak.upgrade().unwrap();
         // TODO(fh): clear default
         Arc::new(Transaction {
-            read_ts: Default::default(),
+            read_ts: self.latest_commit_ts(),
             inner,
             local_storage: Default::default(),
             committed: Default::default(),
