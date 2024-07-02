@@ -149,8 +149,9 @@ impl LsmStorageState {
             let path = LsmStorageInner::path_of_wal_static(path, id);
             let memtable = MemTable::recover_from_wal(id, path)?;
 
-            debug_assert!(!memtable.is_empty());
-            self.imm_memtables.push(Arc::new(memtable));
+            if !memtable.is_empty() {
+                self.imm_memtables.push(Arc::new(memtable));
+            }
         }
         Ok(())
     }
