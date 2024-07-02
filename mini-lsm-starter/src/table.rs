@@ -74,7 +74,7 @@ impl BlockMeta {
     }
 
     /// Decode block meta from a buffer.
-    pub fn decode_block_meta(mut buf: &[u8]) -> Result<Vec<BlockMeta>> {
+    pub fn decode_block_meta(mut buf: &[u8]) -> Result<(Vec<BlockMeta>, TimeStamp)> {
         buf = validate_checksum(buf)?;
 
         let len = buf.get_u16().into();
@@ -83,7 +83,6 @@ impl BlockMeta {
             let offset = buf.get_u32().try_into().unwrap();
 
             let first_key = KeyBytes::decode_from_raw(&mut buf);
-
             let last_key = KeyBytes::decode_from_raw(&mut buf);
 
             vec_block_meta.push(BlockMeta {
@@ -92,7 +91,11 @@ impl BlockMeta {
                 last_key,
             });
         }
-        Ok(vec_block_meta)
+
+        let max_ts = buf.get_u64();
+
+        debug_assert!(!buf.has_remaining());
+        Ok((vec_block_meta, max_ts))
     }
 }
 
@@ -183,7 +186,7 @@ impl SsTable {
         };
         let block_meta_len = len - block_meta_offset;
         let buf = file.read(block_meta_offset, block_meta_len)?;
-        let block_meta = BlockMeta::decode_block_meta(&buf)?;
+        let (block_meta, max_ts) = BlockMeta::decode_block_meta(&buf)?;
 
         let first_key = KeyBytes::clone(&block_meta.first().unwrap().first_key);
         let last_key = KeyBytes::clone(&block_meta.last().unwrap().last_key);
@@ -201,7 +204,7 @@ impl SsTable {
             first_key,
             last_key,
             bloom,
-            max_ts: Default::default(),
+            max_ts,
         })
     }
 
