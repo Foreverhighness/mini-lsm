@@ -149,6 +149,7 @@ impl LsmStorageState {
             let path = LsmStorageInner::path_of_wal_static(path, id);
             let memtable = MemTable::recover_from_wal(id, path)?;
 
+            debug_assert!(!memtable.is_empty());
             self.imm_memtables.push(Arc::new(memtable));
         }
         Ok(())
@@ -383,6 +384,7 @@ impl LsmStorageInner {
         let path = path.as_ref();
         let mut state = LsmStorageState::create(&options);
         let mut next_sst_id = 0;
+        let mut initial_ts = None;
         let block_cache = Arc::new(BlockCache::new(1024));
 
         let compaction_controller = match options.compaction_options {
@@ -411,8 +413,25 @@ impl LsmStorageInner {
             next_sst_id = sst_ids.iter().chain(mmt_ids.iter()).max().unwrap() + 1;
 
             state.rebuild_sstables_from_sst_ids(sst_ids, path, &block_cache)?;
+
+            initial_ts = initial_ts.max(
+                state
+                    .sstables
+                    .values()
+                    .map(|sst| SsTable::max_ts(sst))
+                    .max(),
+            );
+
             if options.enable_wal {
                 state.rebuild_imm_memtables_from_mmt_ids(mmt_ids, path)?;
+
+                initial_ts = initial_ts.max(
+                    state
+                        .imm_memtables
+                        .iter()
+                        .map(|mmt| mmt.max_ts().unwrap())
+                        .max(),
+                )
             }
 
             manifest
@@ -432,8 +451,7 @@ impl LsmStorageInner {
         next_sst_id += 1;
 
         let storage = if TS_ENABLED {
-            // TODO(fh): correct set initial_ts
-            let initial_ts = 0;
+            let initial_ts = initial_ts.unwrap_or(TS_DEFAULT);
             Arc::new_cyclic(|weak| {
                 let mvcc = LsmMvccInner::new(initial_ts, Weak::clone(weak));
 
@@ -479,7 +497,8 @@ impl LsmStorageInner {
 
     /// Get a key from the storage. In day 7, this can be further optimized by using a bloom filter.
     pub fn get(&self, key: &[u8]) -> Result<Option<Bytes>> {
-        todo!()
+        let txn = self.new_txn()?;
+        txn.get(key)
     }
 
     /// Get a key from the storage. In day 7, this can be further optimized by using a bloom filter.
