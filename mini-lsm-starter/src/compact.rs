@@ -20,7 +20,7 @@ use crate::iterators::concat_iterator::SstConcatIterator;
 use crate::iterators::merge_iterator::MergeIterator;
 use crate::iterators::two_merge_iterator::TwoMergeIterator;
 use crate::iterators::StorageIterator;
-use crate::key::{KeySlice, TS_ENABLED};
+use crate::key::{KeySlice, KeyVec};
 use crate::lsm_storage::{LsmStorageInner, LsmStorageState};
 use crate::manifest::ManifestRecord;
 use crate::table::{SsTable, SsTableBuilder, SsTableIterator};
@@ -209,34 +209,46 @@ impl LsmStorageInner {
     where
         I: 'static + for<'a> StorageIterator<KeyType<'a> = KeySlice<'a>>,
     {
+        let watermark = self.mvcc().watermark();
         let mut builder = None;
         let mut tables = Vec::new();
-        let mut prev_key = Vec::new();
+        let mut prev_key = KeyVec::new();
+
         while iter.is_valid() {
             let key = iter.key();
             let value = iter.value();
-            // TODO(fh): remove special judge
-            if TS_ENABLED || !compact_to_bottom_level || !value.is_empty() {
-                let same_key = key.key_ref() == prev_key;
-                let size_exceed = builder.as_ref().map_or(false, |b: &SsTableBuilder| {
-                    b.estimated_size() >= self.options.target_sst_size
-                });
 
-                if !TS_ENABLED {
-                    debug_assert!(!same_key);
-                }
+            let same_key = key.key_ref() == prev_key.key_ref();
 
-                if !same_key && size_exceed {
-                    let builder = builder.take().unwrap();
-                    tables.push(self.build_sst(builder)?);
-                }
+            let second_below_watermark =
+                same_key && key.ts() <= watermark && prev_key.ts() <= watermark;
 
-                let builder_mut =
-                    builder.get_or_insert_with(|| SsTableBuilder::new(self.options.block_size));
+            let first_below_watermark_and_is_deleted = !second_below_watermark
+                && key.ts() <= watermark
+                && compact_to_bottom_level
+                && value.is_empty();
 
-                builder_mut.add(key, value);
-                key.key_ref().clone_into(&mut prev_key);
+            // TODO(fh): Optimize by `same_key`
+            prev_key.set_from_slice(key);
+
+            if first_below_watermark_and_is_deleted || second_below_watermark {
+                iter.next()?;
+                continue;
             }
+
+            let size_exceed = builder.as_ref().map_or(false, |b: &SsTableBuilder| {
+                b.estimated_size() >= self.options.target_sst_size
+            });
+
+            if !same_key && size_exceed {
+                let builder = builder.take().unwrap();
+                tables.push(self.build_sst(builder)?);
+            }
+
+            let builder_mut =
+                builder.get_or_insert_with(|| SsTableBuilder::new(self.options.block_size));
+
+            builder_mut.add(key, value);
             iter.next()?;
         }
 
@@ -337,10 +349,6 @@ impl LsmStorageInner {
         let l0_sstables = &snapshot.l0_sstables;
         let l1_sstables = &snapshot.levels[0].1;
         // drop(snapshot); // Is it cheaper to clone l0|l1_sstables than holding an Arc?
-
-        if l0_sstables.is_empty() {
-            return Ok(());
-        }
 
         let task = CompactionTask::ForceFullCompaction {
             l0_sstables: l0_sstables.clone(),
