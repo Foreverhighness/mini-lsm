@@ -8,7 +8,7 @@ use std::{cmp::Reverse, marker::PhantomData};
 
 pub const TS_ENABLED: bool = true;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub struct TimeStampedKey<T: AsRef<[u8]>>(T, TimeStamp);
 
 pub type Key<T> = TimeStampedKey<T>;
@@ -246,6 +246,17 @@ impl<'a> Key<&'a [u8]> {
         let ts = self.1;
 
         KeyBytesGuard(KeyBytes::from_bytes_with_ts(bytes, ts), PhantomData)
+    }
+}
+
+impl<T: AsRef<[u8]>> std::fmt::Debug for Key<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Key({:?}, {})",
+            Bytes::copy_from_slice(self.0.as_ref()),
+            self.1
+        )
     }
 }
 
