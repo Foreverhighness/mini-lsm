@@ -76,10 +76,11 @@ impl CompactionController {
         snapshot: &LsmStorageState,
         task: &CompactionTask,
         output: &[usize],
+        in_recovery: bool,
     ) -> (LsmStorageState, Vec<usize>) {
         match (self, task) {
             (CompactionController::Leveled(ctrl), CompactionTask::Leveled(task)) => {
-                ctrl.apply_compaction_result(snapshot, task, output)
+                ctrl.apply_compaction_result(snapshot, task, output, in_recovery)
             }
             (CompactionController::Simple(ctrl), CompactionTask::Simple(task)) => {
                 ctrl.apply_compaction_result(snapshot, task, output)
@@ -421,7 +422,7 @@ impl LsmStorageInner {
                 let mut guard_arc_state = self.state.write();
 
                 let (mut new_state, deleted_ids) =
-                    ctrl.apply_compaction_result(guard_arc_state.as_ref(), &task, &output);
+                    ctrl.apply_compaction_result(guard_arc_state.as_ref(), &task, &output, false);
 
                 for id in &deleted_ids {
                     let found = new_state.sstables.remove(id).is_some();

@@ -203,6 +203,7 @@ impl LeveledCompactionController {
         snapshot: &LsmStorageState,
         task: &LeveledCompactionTask,
         output: &[usize],
+        _in_recovery: bool,
     ) -> (LsmStorageState, Vec<usize>) {
         let mut new_state = snapshot.clone();
         let LeveledCompactionTask {

@@ -102,7 +102,7 @@ impl LsmStorageState {
                 }
                 ManifestRecord::Compaction(task, output) => {
                     let (new_state, deleted_sst_ids) =
-                        ctrl.apply_compaction_result(self, &task, &output);
+                        ctrl.apply_compaction_result(self, &task, &output, true);
                     *self = new_state;
 
                     for id in &deleted_sst_ids {
