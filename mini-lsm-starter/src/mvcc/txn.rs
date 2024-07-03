@@ -9,7 +9,7 @@ use std::{
     sync::{atomic::AtomicBool, Arc},
 };
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use bytes::Bytes;
 use crossbeam_skiplist::SkipMap;
 use ouroboros::self_referencing;
@@ -18,7 +18,7 @@ use parking_lot::Mutex;
 use crate::{
     iterators::{two_merge_iterator::TwoMergeIterator, StorageIterator},
     lsm_iterator::{FusedIterator, LsmIterator},
-    lsm_storage::LsmStorageInner,
+    lsm_storage::{LsmStorageInner, WriteBatchRecord},
     mem_table::map_bound,
 };
 
@@ -32,7 +32,15 @@ pub struct Transaction {
 }
 
 impl Transaction {
+    fn assume_running(&self) -> Result<()> {
+        let committed = self.committed.load(std::sync::atomic::Ordering::Relaxed);
+        if committed {
+            bail!("txn already committed");
+        }
+        Ok(())
+    }
     pub fn get(&self, key: &[u8]) -> Result<Option<Bytes>> {
+        self.assume_running()?;
         if let Some(v) = self.local_storage.get(key) {
             let value = Bytes::clone(v.value());
             return Ok(Some(value).filter(|v| !v.is_empty()));
@@ -42,6 +50,7 @@ impl Transaction {
     }
 
     pub fn scan(self: &Arc<Self>, lower: Bound<&[u8]>, upper: Bound<&[u8]>) -> Result<TxnIterator> {
+        self.assume_running()?;
         let lsm_iter = self.inner.scan_with_ts(lower, upper, self.read_ts)?;
         let mut local_iter = TxnLocalIteratorBuilder {
             map: Arc::clone(&self.local_storage),
@@ -55,16 +64,36 @@ impl Transaction {
         TxnIterator::create(Arc::clone(self), txn_lsm_iter)
     }
 
-    pub fn put(&self, key: &[u8], value: &[u8]) {
-        unimplemented!()
+    pub fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
+        self.assume_running()?;
+
+        self.local_storage
+            .insert(Bytes::copy_from_slice(key), Bytes::copy_from_slice(value));
+
+        Ok(())
     }
 
-    pub fn delete(&self, key: &[u8]) {
-        unimplemented!()
+    pub fn delete(&self, key: &[u8]) -> Result<()> {
+        self.put(key, &[])
     }
 
     pub fn commit(&self) -> Result<()> {
-        unimplemented!()
+        self.assume_running()?;
+
+        let batch = self
+            .local_storage
+            .iter()
+            .map(|entry| {
+                WriteBatchRecord::Put(Bytes::clone(entry.key()), Bytes::clone(entry.value()))
+            })
+            .collect::<Vec<_>>();
+
+        self.inner.write_batch(&batch)?;
+
+        self.committed
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+
+        Ok(())
     }
 }
 
@@ -127,7 +156,18 @@ impl TxnIterator {
         txn: Arc<Transaction>,
         iter: TwoMergeIterator<TxnLocalIterator, FusedIterator<LsmIterator>>,
     ) -> Result<Self> {
-        Ok(Self { _txn: txn, iter })
+        let mut iter = Self { _txn: txn, iter };
+        iter.next_valid_value()?;
+
+        Ok(iter)
+    }
+
+    fn next_valid_value(&mut self) -> Result<()> {
+        while self.is_valid() && self.value().is_empty() {
+            self.iter.next()?;
+        }
+
+        Ok(())
     }
 }
 
@@ -147,7 +187,8 @@ impl StorageIterator for TxnIterator {
     }
 
     fn next(&mut self) -> Result<()> {
-        self.iter.next()
+        self.iter.next()?;
+        self.next_valid_value()
     }
 
     fn num_active_iterators(&self) -> usize {
