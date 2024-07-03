@@ -9,7 +9,7 @@ use std::{
     sync::{atomic::AtomicBool, Arc},
 };
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use bytes::Bytes;
 use crossbeam_skiplist::SkipMap;
 use ouroboros::self_referencing;
@@ -27,20 +27,25 @@ pub struct Transaction {
     pub(crate) inner: Arc<LsmStorageInner>,
     pub(crate) local_storage: Arc<SkipMap<Bytes, Bytes>>,
     pub(crate) committed: Arc<AtomicBool>,
-    /// Write set and read set
-    pub(crate) key_hashes: Option<Mutex<(HashSet<u32>, HashSet<u32>)>>,
+    /// Read set and write set
+    pub(crate) rw_set: Option<Mutex<(HashSet<u32>, HashSet<u32>)>>,
 }
 
 impl Transaction {
-    fn assume_running(&self) -> Result<()> {
+    fn assume_running(&self) {
         let committed = self.committed.load(std::sync::atomic::Ordering::Relaxed);
-        if committed {
-            bail!("txn already committed");
-        }
-        Ok(())
+        assert!(!committed, "txn already committed");
     }
+
     pub fn get(&self, key: &[u8]) -> Result<Option<Bytes>> {
-        self.assume_running()?;
+        self.assume_running();
+
+        if let Some(ref rw_set) = self.rw_set {
+            let (ref mut read_set, _) = *rw_set.lock();
+            let hash = farmhash::hash32(key);
+            read_set.insert(hash);
+        }
+
         if let Some(v) = self.local_storage.get(key) {
             let value = Bytes::clone(v.value());
             return Ok(Some(value).filter(|v| !v.is_empty()));
@@ -50,7 +55,8 @@ impl Transaction {
     }
 
     pub fn scan(self: &Arc<Self>, lower: Bound<&[u8]>, upper: Bound<&[u8]>) -> Result<TxnIterator> {
-        self.assume_running()?;
+        self.assume_running();
+
         let lsm_iter = self.inner.scan_with_ts(lower, upper, self.read_ts)?;
         let mut local_iter = TxnLocalIteratorBuilder {
             map: Arc::clone(&self.local_storage),
@@ -65,7 +71,13 @@ impl Transaction {
     }
 
     pub fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
-        self.assume_running()?;
+        self.assume_running();
+
+        if let Some(ref rw_set) = self.rw_set {
+            let (_, ref mut write_set) = *rw_set.lock();
+            let hash = farmhash::hash32(key);
+            write_set.insert(hash);
+        }
 
         self.local_storage
             .insert(Bytes::copy_from_slice(key), Bytes::copy_from_slice(value));
@@ -78,7 +90,10 @@ impl Transaction {
     }
 
     pub fn commit(&self) -> Result<()> {
-        self.assume_running()?;
+        self.assume_running();
+
+        let mvcc = self.inner.mvcc();
+        let _guard = mvcc.commit_lock.lock();
 
         let batch = self
             .local_storage
@@ -147,7 +162,7 @@ impl StorageIterator for TxnLocalIterator {
 }
 
 pub struct TxnIterator {
-    _txn: Arc<Transaction>,
+    txn: Arc<Transaction>,
     iter: TwoMergeIterator<TxnLocalIterator, FusedIterator<LsmIterator>>,
 }
 
@@ -156,7 +171,7 @@ impl TxnIterator {
         txn: Arc<Transaction>,
         iter: TwoMergeIterator<TxnLocalIterator, FusedIterator<LsmIterator>>,
     ) -> Result<Self> {
-        let mut iter = Self { _txn: txn, iter };
+        let mut iter = Self { txn, iter };
         iter.next_valid_value()?;
 
         Ok(iter)
@@ -165,6 +180,15 @@ impl TxnIterator {
     fn next_valid_value(&mut self) -> Result<()> {
         while self.is_valid() && self.value().is_empty() {
             self.iter.next()?;
+        }
+
+        if self.is_valid() {
+            let key = self.key();
+            if let Some(ref rw_set) = self.txn.rw_set {
+                let (ref mut read_set, _) = *rw_set.lock();
+                let hash = farmhash::hash32(key);
+                read_set.insert(hash);
+            }
         }
 
         Ok(())
