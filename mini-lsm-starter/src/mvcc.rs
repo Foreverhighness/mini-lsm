@@ -71,13 +71,14 @@ impl LsmMvccInner {
         let (read_ts, ref mut watermark) = *self.ts.lock();
         watermark.add_reader(read_ts);
 
-        // TODO(fh): clear default
+        let rw_set = serializable.then(Default::default);
+
         Arc::new(Transaction {
             read_ts,
             inner,
-            local_storage: Default::default(),
-            committed: Default::default(),
-            key_hashes: Default::default(),
+            local_storage: Arc::default(),
+            committed: Arc::default(),
+            rw_set,
         })
     }
 }
