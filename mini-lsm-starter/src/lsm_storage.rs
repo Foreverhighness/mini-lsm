@@ -582,7 +582,7 @@ impl LsmStorageInner {
         Ok(None)
     }
 
-    fn write_batch_inner<T, R, I>(&self, batch: I) -> Result<TimeStamp>
+    pub(crate) fn write_batch_inner<T, R, I>(&self, batch: I) -> Result<TimeStamp>
     where
         T: AsRef<[u8]>,
         R: Borrow<WriteBatchRecord<T>>,
@@ -620,50 +620,24 @@ impl LsmStorageInner {
             }
         }
 
+        mvcc.update_commit_ts(ts);
+
         Ok(ts)
     }
 
     /// Write a batch of data into the storage. Implement in week 2 day 7.
     pub fn write_batch<T: AsRef<[u8]>>(&self, batch: &[WriteBatchRecord<T>]) -> Result<()> {
-        let (_guard, ts) = self
-            .mvcc
-            .as_ref()
-            .map(|mvcc| (Some(mvcc.write_lock.lock()), mvcc.latest_commit_ts() + 1))
-            .unwrap_or_default();
+        let mvcc = self.mvcc();
+        let txn = mvcc.new_txn(self.options.serializable);
 
-        let guard_arc_state = self.state.read();
-        let memtable = &guard_arc_state.memtable;
         for record in batch {
             match *record {
-                WriteBatchRecord::Put(ref key, ref value) => {
-                    let key = UserKeyRef::from_slice_ts(key.as_ref(), ts);
-                    memtable.put(key, value.as_ref())?;
-                }
-                WriteBatchRecord::Del(ref key) => {
-                    let key = UserKeyRef::from_slice_ts(key.as_ref(), ts);
-                    memtable.put(key, &[])?;
-                }
-            }
-        }
-        let size = guard_arc_state.memtable.approximate_size();
-
-        drop(guard_arc_state);
-
-        let memtable_reaches_capacity_on_put = size >= self.options.target_sst_size;
-        if memtable_reaches_capacity_on_put {
-            let state_lock = self.state_lock.lock();
-            let current_memtable_reaches_capacity =
-                self.state.read().memtable.approximate_size() >= self.options.target_sst_size;
-            if current_memtable_reaches_capacity {
-                self.force_freeze_memtable(&state_lock)?;
+                WriteBatchRecord::Put(ref key, ref value) => txn.put(key.as_ref(), value.as_ref()),
+                WriteBatchRecord::Del(ref key) => txn.delete(key.as_ref()),
             }
         }
 
-        if let Some(ref mvcc) = self.mvcc {
-            mvcc.update_commit_ts(ts);
-        }
-
-        Ok(())
+        txn.commit()
     }
 
     /// Put a key-value pair into the storage by writing into the current memtable.
