@@ -6,10 +6,13 @@
 use std::{
     collections::HashSet,
     ops::Bound,
-    sync::{atomic::AtomicBool, Arc},
+    sync::{
+        atomic::{AtomicBool, Ordering::Relaxed},
+        Arc,
+    },
 };
 
-use anyhow::Result;
+use anyhow::{anyhow, bail, Result};
 use bytes::Bytes;
 use crossbeam_skiplist::SkipMap;
 use ouroboros::self_referencing;
@@ -33,7 +36,7 @@ pub struct Transaction {
 
 impl Transaction {
     fn assume_running(&self) {
-        let committed = self.committed.load(std::sync::atomic::Ordering::Relaxed);
+        let committed = self.committed.load(Relaxed);
         assert!(!committed, "txn already committed");
     }
 
@@ -89,11 +92,36 @@ impl Transaction {
         self.put(key, &[])
     }
 
+    fn serializable_validate(&self) -> bool {
+        let Some(ref rw_set) = self.rw_set else {
+            return true;
+        };
+
+        let (ref read_set, ref write_set) = *rw_set.lock();
+        let is_read_only_txn = write_set.is_empty();
+        if is_read_only_txn {
+            return true;
+        }
+
+        let mvcc = self.inner.mvcc();
+        let conflict_txns = mvcc.committed_txns.lock().range((self.read_ts + 1)..);
+
+        true
+    }
+
     pub fn commit(&self) -> Result<()> {
         self.assume_running();
 
         let mvcc = self.inner.mvcc();
         let _guard = mvcc.commit_lock.lock();
+
+        self.committed
+            .compare_exchange(false, true, Relaxed, Relaxed)
+            .map_err(|_| anyhow!("commit twice?"))?;
+
+        if !self.serializable_validate() {
+            bail!("violate serializable, abort");
+        }
 
         let batch = self
             .local_storage
@@ -104,9 +132,6 @@ impl Transaction {
             .collect::<Vec<_>>();
 
         self.inner.write_batch(&batch)?;
-
-        self.committed
-            .store(true, std::sync::atomic::Ordering::Relaxed);
 
         Ok(())
     }

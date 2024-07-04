@@ -3,6 +3,7 @@
 #![allow(clippy::unused_self)] // TODO(fh): remove clippy allow
 #![allow(clippy::unnecessary_wraps)] // TODO(fh): remove clippy allow
 
+use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::ops::Bound;
 use std::path::{Path, PathBuf};
@@ -579,6 +580,47 @@ impl LsmStorageInner {
         }
 
         Ok(None)
+    }
+
+    fn write_batch_inner<T, R, I>(&self, batch: I) -> Result<TimeStamp>
+    where
+        T: AsRef<[u8]>,
+        R: Borrow<WriteBatchRecord<T>>,
+        I: IntoIterator<Item = R>,
+    {
+        let mvcc = self.mvcc();
+        let _guard = mvcc.write_lock.lock();
+        let ts = mvcc.latest_commit_ts() + 1;
+
+        let guard_arc_state = self.state.read();
+        let memtable = &guard_arc_state.memtable;
+        for record in batch {
+            match *record.borrow() {
+                WriteBatchRecord::Put(ref key, ref value) => {
+                    let key = UserKeyRef::from_slice_ts(key.as_ref(), ts);
+                    memtable.put(key, value.as_ref())?;
+                }
+                WriteBatchRecord::Del(ref key) => {
+                    let key = UserKeyRef::from_slice_ts(key.as_ref(), ts);
+                    memtable.put(key, &[])?;
+                }
+            }
+        }
+        let size = guard_arc_state.memtable.approximate_size();
+
+        drop(guard_arc_state);
+
+        let memtable_reaches_capacity_on_put = size >= self.options.target_sst_size;
+        if memtable_reaches_capacity_on_put {
+            let state_lock = self.state_lock.lock();
+            let current_memtable_reaches_capacity =
+                self.state.read().memtable.approximate_size() >= self.options.target_sst_size;
+            if current_memtable_reaches_capacity {
+                self.force_freeze_memtable(&state_lock)?;
+            }
+        }
+
+        Ok(ts)
     }
 
     /// Write a batch of data into the storage. Implement in week 2 day 7.
