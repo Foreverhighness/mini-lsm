@@ -1,7 +1,6 @@
-#![allow(unused_variables)] // TODO(you): remove this lint after implementing this mod
-#![allow(dead_code)] // TODO(you): remove this lint after implementing this mod
-#![allow(clippy::future_not_send)] // TODO(fh): remove clippy allow
-#![allow(clippy::mem_forget)] // TODO(fh): remove clippy allow
+#![allow(clippy::pattern_type_mismatch)]
+#![allow(clippy::future_not_send)]
+#![allow(clippy::mem_forget)]
 
 use std::{
     collections::HashSet,
@@ -24,6 +23,8 @@ use crate::{
     lsm_storage::{LsmStorageInner, WriteBatchRecord},
     mem_table::map_bound,
 };
+
+use super::CommittedTxnData;
 
 pub struct Transaction {
     pub(crate) read_ts: u64,
@@ -73,7 +74,7 @@ impl Transaction {
         TxnIterator::create(Arc::clone(self), txn_lsm_iter)
     }
 
-    pub fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
+    pub fn put(&self, key: &[u8], value: &[u8]) {
         self.assume_running();
 
         if let Some(ref rw_set) = self.rw_set {
@@ -84,12 +85,10 @@ impl Transaction {
 
         self.local_storage
             .insert(Bytes::copy_from_slice(key), Bytes::copy_from_slice(value));
-
-        Ok(())
     }
 
-    pub fn delete(&self, key: &[u8]) -> Result<()> {
-        self.put(key, &[])
+    pub fn delete(&self, key: &[u8]) {
+        self.put(key, &[]);
     }
 
     fn serializable_validate(&self) -> bool {
@@ -104,7 +103,13 @@ impl Transaction {
         }
 
         let mvcc = self.inner.mvcc();
-        let conflict_txns = mvcc.committed_txns.lock().range((self.read_ts + 1)..);
+        for (.., CommittedTxnData { key_hashes, .. }) in
+            mvcc.committed_txns.lock().range((self.read_ts + 1)..)
+        {
+            if !key_hashes.is_disjoint(read_set) {
+                return false;
+            }
+        }
 
         true
     }
@@ -123,15 +128,22 @@ impl Transaction {
             bail!("violate serializable, abort");
         }
 
-        let batch = self
-            .local_storage
-            .iter()
-            .map(|entry| {
-                WriteBatchRecord::Put(Bytes::clone(entry.key()), Bytes::clone(entry.value()))
-            })
-            .collect::<Vec<_>>();
+        let batch = self.local_storage.iter().map(|entry| {
+            WriteBatchRecord::Put(Bytes::clone(entry.key()), Bytes::clone(entry.value()))
+        });
 
-        self.inner.write_batch(&batch)?;
+        let commit_ts = self.inner.write_batch_inner(batch)?;
+
+        if let Some(ref rw_set) = self.rw_set {
+            let write_set = std::mem::take(&mut rw_set.lock().1);
+            let data = CommittedTxnData {
+                key_hashes: write_set,
+                read_ts: self.read_ts,
+                commit_ts,
+            };
+            let first = mvcc.committed_txns.lock().insert(commit_ts, data).is_none();
+            debug_assert!(first);
+        }
 
         Ok(())
     }
