@@ -21,7 +21,7 @@ use crate::iterators::merge_iterator::MergeIterator;
 use crate::iterators::two_merge_iterator::TwoMergeIterator;
 use crate::iterators::StorageIterator;
 use crate::key::{KeySlice, KeyVec};
-use crate::lsm_storage::{LsmStorageInner, LsmStorageState};
+use crate::lsm_storage::{CompactionFilter, LsmStorageInner, LsmStorageState};
 use crate::manifest::ManifestRecord;
 use crate::table::{SsTable, SsTableBuilder, SsTableIterator};
 
@@ -43,6 +43,15 @@ impl CompactionTask {
             CompactionTask::Leveled(ref task) => task.is_lower_level_bottom_level,
             CompactionTask::Simple(ref task) => task.is_lower_level_bottom_level,
             CompactionTask::Tiered(ref task) => task.bottom_tier_included,
+        }
+    }
+}
+
+impl CompactionFilter {
+    /// Check whether the predicate is satisfy
+    pub(crate) fn is_matched(&self, key: &[u8]) -> bool {
+        match self {
+            CompactionFilter::Prefix(prefix) => key.starts_with(prefix),
         }
     }
 }
@@ -223,10 +232,15 @@ impl LsmStorageInner {
             let second_below_watermark =
                 same_key && key.ts() <= watermark && prev_key.ts() <= watermark;
 
-            let first_below_watermark_and_is_deleted = !second_below_watermark
-                && key.ts() <= watermark
-                && compact_to_bottom_level
-                && value.is_empty();
+            let is_matched = self
+                .compaction_filters
+                .lock()
+                .iter()
+                .any(|filter| filter.is_matched(key.key_ref()));
+
+            let need_deleted = (compact_to_bottom_level && value.is_empty()) || is_matched;
+            let first_below_watermark_and_is_deleted =
+                !second_below_watermark && key.ts() <= watermark && need_deleted;
 
             // TODO(fh): Optimize by `same_key`
             prev_key.set_from_slice(key);
