@@ -81,4 +81,9 @@ impl LsmMvccInner {
             rw_set,
         })
     }
+
+    fn vacuum(&self) {
+        let watermark = self.watermark();
+        self.committed_txns.lock().retain(|&ts, _| ts > watermark);
+    }
 }

@@ -143,6 +143,8 @@ impl Transaction {
             };
             let first = mvcc.committed_txns.lock().insert(commit_ts, data).is_none();
             debug_assert!(first);
+
+            mvcc.vacuum();
         }
 
         Ok(())
