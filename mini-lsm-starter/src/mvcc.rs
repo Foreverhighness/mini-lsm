@@ -1,8 +1,3 @@
-#![allow(unused_variables)] // TODO(you): remove this lint after implementing this mod
-#![allow(dead_code)] // TODO(you): remove this lint after implementing this mod
-#![allow(clippy::needless_pass_by_value)] // TODO(fh): remove clippy allow
-#![allow(clippy::unused_self)] // TODO(fh): remove clippy allow
-
 pub mod txn;
 pub mod watermark;
 
