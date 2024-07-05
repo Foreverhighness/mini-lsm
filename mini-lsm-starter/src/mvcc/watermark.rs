@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{btree_map::Entry, BTreeMap};
 
 #[derive(Debug, Default)]
 pub struct Watermark {
@@ -17,12 +17,12 @@ impl Watermark {
     }
 
     pub fn remove_reader(&mut self, ts: u64) {
-        debug_assert!(self.readers.contains_key(&ts));
+        let Entry::Occupied(entry) = self.readers.entry(ts).and_modify(|e| *e -= 1) else {
+            panic!("entry not found");
+        };
 
-        let cnt = self.readers.get_mut(&ts).unwrap();
-        *cnt -= 1;
-        if *cnt == 0 {
-            self.readers.remove(&ts);
+        if *entry.get() == 0 {
+            entry.remove();
         }
     }
 
