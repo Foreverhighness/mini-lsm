@@ -20,7 +20,7 @@ use crate::iterators::concat_iterator::SstConcatIterator;
 use crate::iterators::merge_iterator::MergeIterator;
 use crate::iterators::two_merge_iterator::TwoMergeIterator;
 use crate::iterators::StorageIterator;
-use crate::key::{KeySlice, KeyVec};
+use crate::key::{KeySlice, KeyVec, TS_DEFAULT};
 use crate::lsm_storage::{CompactionFilter, LsmStorageInner, LsmStorageState};
 use crate::manifest::ManifestRecord;
 use crate::table::{SsTable, SsTableBuilder, SsTableIterator};
@@ -218,7 +218,11 @@ impl LsmStorageInner {
     where
         I: 'static + for<'a> StorageIterator<KeyType<'a> = KeySlice<'a>>,
     {
-        let watermark = self.mvcc().watermark();
+        let watermark = self
+            .mvcc
+            .as_ref()
+            .map(|mvcc| mvcc.watermark())
+            .unwrap_or(TS_DEFAULT);
         let mut builder = None;
         let mut tables = Vec::new();
         let mut prev_key = KeyVec::new();
