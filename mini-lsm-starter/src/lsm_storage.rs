@@ -796,8 +796,12 @@ impl LsmStorageInner {
 
     /// Create an iterator over a range of keys.
     pub fn scan(&self, lower: Bound<&[u8]>, upper: Bound<&[u8]>) -> Result<TxnIterator> {
-        let txn = self.new_txn()?;
-        txn.scan(lower, upper)
+        if let Ok(txn) = self.new_txn() {
+            txn.scan(lower, upper)
+        } else {
+            let lsm_iter = self.scan_with_ts(lower, upper, TS_DEFAULT)?;
+            TxnIterator::from_lsm_iter(lsm_iter)
+        }
     }
 
     /// Create an iterator over a range of keys.

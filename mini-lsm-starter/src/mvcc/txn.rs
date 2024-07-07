@@ -61,7 +61,6 @@ impl Transaction {
     pub fn scan(self: &Arc<Self>, lower: Bound<&[u8]>, upper: Bound<&[u8]>) -> Result<TxnIterator> {
         self.assume_running();
 
-        let lsm_iter = self.inner.scan_with_ts(lower, upper, self.read_ts)?;
         let mut local_iter = TxnLocalIteratorBuilder {
             map: Arc::clone(&self.local_storage),
             iter_builder: |map| map.range((map_bound(lower), map_bound(upper))),
@@ -69,6 +68,8 @@ impl Transaction {
         }
         .build();
         local_iter.next().unwrap();
+
+        let lsm_iter = self.inner.scan_with_ts(lower, upper, self.read_ts)?;
 
         let txn_lsm_iter = TwoMergeIterator::create(local_iter, lsm_iter)?;
         TxnIterator::create(Arc::clone(self), txn_lsm_iter)
@@ -172,6 +173,17 @@ pub struct TxnLocalIterator {
     item: (Bytes, Bytes),
 }
 
+impl TxnLocalIterator {
+    pub fn empty() -> Self {
+        TxnLocalIteratorBuilder {
+            map: Arc::default(),
+            iter_builder: |map| map.range((Bound::Unbounded, Bound::Unbounded)),
+            item: Default::default(),
+        }
+        .build()
+    }
+}
+
 impl StorageIterator for TxnLocalIterator {
     type KeyType<'a> = &'a [u8];
 
@@ -201,16 +213,24 @@ impl StorageIterator for TxnLocalIterator {
 }
 
 pub struct TxnIterator {
-    txn: Arc<Transaction>,
+    txn: Option<Arc<Transaction>>,
     iter: TwoMergeIterator<TxnLocalIterator, FusedIterator<LsmIterator>>,
 }
 
 impl TxnIterator {
+    pub fn from_lsm_iter(iter: FusedIterator<LsmIterator>) -> Result<Self> {
+        let iter = TwoMergeIterator::create(TxnLocalIterator::empty(), iter)?;
+        Ok(Self { txn: None, iter })
+    }
+
     pub fn create(
         txn: Arc<Transaction>,
         iter: TwoMergeIterator<TxnLocalIterator, FusedIterator<LsmIterator>>,
     ) -> Result<Self> {
-        let mut iter = Self { txn, iter };
+        let mut iter = Self {
+            txn: Some(txn),
+            iter,
+        };
         iter.next_valid_value()?;
 
         Ok(iter)
@@ -223,7 +243,7 @@ impl TxnIterator {
 
         if self.is_valid() {
             let key = self.key();
-            if let Some(ref rw_set) = self.txn.rw_set {
+            if let Some(rw_set) = self.txn.as_ref().and_then(|txn| txn.rw_set.as_ref()) {
                 let (ref mut read_set, _) = *rw_set.lock();
                 let hash = farmhash::hash32(key);
                 read_set.insert(hash);
