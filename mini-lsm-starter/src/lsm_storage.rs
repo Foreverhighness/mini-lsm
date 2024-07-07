@@ -639,8 +639,13 @@ impl LsmStorageInner {
 
     /// Put a key-value pair into the storage by writing into the current memtable.
     pub fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
-        let ts = self.mvcc.as_ref().unwrap().latest_commit_ts() + 1;
-        self.mvcc.as_ref().unwrap().update_commit_ts(ts);
+        let ts = if let Some(mvcc) = self.mvcc.as_ref() {
+            let ts = mvcc.latest_commit_ts() + 1;
+            mvcc.update_commit_ts(ts);
+            ts
+        } else {
+            TS_DEFAULT
+        };
 
         let key = UserKeyRef::from_slice_ts(key, ts);
 
