@@ -501,8 +501,11 @@ impl LsmStorageInner {
 
     /// Get a key from the storage. In day 7, this can be further optimized by using a bloom filter.
     pub fn get(&self, key: &[u8]) -> Result<Option<Bytes>> {
-        let txn = self.new_txn()?;
-        txn.get(key)
+        if let Ok(txn) = self.new_txn() {
+            txn.get(key)
+        } else {
+            self.get_with_ts(key, TS_DEFAULT)
+        }
     }
 
     /// Get a key from the storage. In day 7, this can be further optimized by using a bloom filter.
