@@ -440,7 +440,7 @@ impl LsmStorageInner {
                 let mut guard_arc_state = self.state.write();
 
                 let (mut new_state, deleted_ids) =
-                    ctrl.apply_compaction_result(guard_arc_state.as_ref(), &task, &output);
+                    ctrl.apply_compaction_result(guard_arc_state.as_ref(), &task, &output, false);
 
                 for id in &deleted_ids {
                     let found = new_state.sstables.remove(id).is_some();

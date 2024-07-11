@@ -131,6 +131,7 @@ impl MemTable {
     ///
     /// In week 1, day 1, simply put the key-value pair into the skipmap.
     /// In week 2, day 6, also flush the data to WAL.
+    /// In week 3, day 5, modify the function to use the batch API.
     pub fn put(&self, key: UserKeyRef, value: &[u8]) -> Result<()> {
         let size_delta = key.raw_len() + value.len();
         self.approximate_size
@@ -143,6 +144,11 @@ impl MemTable {
         self.map
             .insert(UserKey::copy_from_slice(key), Bytes::copy_from_slice(value));
         Ok(())
+    }
+
+    /// Implement this in week 3, day 5.
+    pub fn put_batch(&self, _data: &[(KeySlice, &[u8])]) -> Result<()> {
+        unimplemented!()
     }
 
     pub fn sync_wal(&self) -> Result<()> {
